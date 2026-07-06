@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { MMKV } from 'react-native-mmkv';
-import * as Crypto from 'expo-crypto';
+import { nanoid } from 'nanoid';
 import { syncApi } from '@/services/api';
 import type { OfflineQueueItem, SyncCollection } from '@/types';
 
@@ -8,7 +8,7 @@ const storage = new MMKV({ id: 'offline-queue' });
 const QUEUE_KEY = 'queue';
 
 function generateId(): string {
-  return Crypto.randomUUID();
+  return nanoid();
 }
 
 function loadQueue(): OfflineQueueItem[] {
