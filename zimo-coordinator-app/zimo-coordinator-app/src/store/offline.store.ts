@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { MMKV } from 'react-native-mmkv';
-import 'react-native-get-random-values';
+import * as Crypto from 'expo-crypto';
 import { syncApi } from '@/services/api';
 import type { OfflineQueueItem, SyncCollection } from '@/types';
 
@@ -8,7 +8,7 @@ const storage = new MMKV({ id: 'offline-queue' });
 const QUEUE_KEY = 'queue';
 
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  return Crypto.randomUUID();
 }
 
 function loadQueue(): OfflineQueueItem[] {

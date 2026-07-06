@@ -12,7 +12,11 @@
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
@@ -26,18 +30,35 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      ["expo-location", {"locationAlwaysAndWhenInUsePermission": "Allow Zimo Coordinator to use your location for farm verification."}],
-      ["expo-camera", {"cameraPermission": "Allow Zimo Coordinator to access your camera to capture farm evidence photos."}],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Zimo Coordinator to use your location for farm verification."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Zimo Coordinator to access your camera to capture farm evidence photos."
+        }
+      ],
       "@sentry/react-native/expo"
     ],
     "scheme": "zimo-coordinator",
-    "experiments": { "typedRoutes": true },
-    "runtimeVersion": { "policy": "appVersion" },
-    "updates": {
-      "url": "https://u.expo.dev/REPLACE_WITH_EAS_PROJECT_ID"
+    "experiments": {
+      "typedRoutes": true
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     },
     "extra": {
-      "eas": { "projectId": "REPLACE_WITH_EAS_PROJECT_ID" }
-    }
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "a7f0848c-5d52-4d89-ac38-4aaca994f134"
+      }
+    },
+    "owner": "heraja"
   }
 }
