@@ -1,0 +1,63 @@
+name: Mobile CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  # Pushes a JS-only OTA update to the "production" channel whenever main
+  # changes and the diff doesn't touch native config. Requires:
+  #   1. `eas init` run once locally to populate app.json's extra.eas.projectId
+  #      and the updates.url (currently placeholders — see app.json).
+  #   2. An EXPO_TOKEN secret in this repo (from `eas whoami` / expo.dev
+  #      access token settings) added under Settings → Secrets → Actions.
+  # Until both of those are done, this job will fail — remove the `if: false`
+  # once configured.
+  publish-update:
+    name: Publish OTA update
+    needs: typecheck
+    runs-on: ubuntu-latest
+    if: false && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish update
+        run: eas update --branch production --channel production --non-interactive --message "${{ github.event.head_commit.message }}"

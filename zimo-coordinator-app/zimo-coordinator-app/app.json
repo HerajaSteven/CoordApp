@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Zimo Field Coordinator",
+    "slug": "zimo-coordinator",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.zimoclan.coordinator",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.zimoclan.coordinator",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Location is needed to verify farm GPS coordinates and boundary walk.",
+        "NSCameraUsageDescription": "Camera is needed to capture identity photos and farm evidence.",
+        "NSPhotoLibraryUsageDescription": "Photo library access is needed to attach evidence photos."
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-location", {"locationAlwaysAndWhenInUsePermission": "Allow Zimo Coordinator to use your location for farm verification."}],
+      ["expo-camera", {"cameraPermission": "Allow Zimo Coordinator to access your camera to capture farm evidence photos."}],
+      "@sentry/react-native/expo"
+    ],
+    "scheme": "zimo-coordinator",
+    "experiments": { "typedRoutes": true },
+    "runtimeVersion": { "policy": "appVersion" },
+    "updates": {
+      "url": "https://u.expo.dev/REPLACE_WITH_EAS_PROJECT_ID"
+    },
+    "extra": {
+      "eas": { "projectId": "REPLACE_WITH_EAS_PROJECT_ID" }
+    }
+  }
+}

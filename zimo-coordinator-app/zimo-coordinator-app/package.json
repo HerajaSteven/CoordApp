@@ -1,0 +1,52 @@
+{
+  "name": "zimo-coordinator-app",
+  "main": "expo-router/entry",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
+    "@react-navigation/bottom-tabs": "^7.18.5",
+    "@react-navigation/native": "^7.3.5",
+    "@sentry/react-native": "^8.17.1",
+    "@shopify/flash-list": "^2.3.2",
+    "@tanstack/react-query": "^5.101.2",
+    "axios": "^1.7.0",
+    "expo": "~53.0.0",
+    "expo-camera": "^16.0.0",
+    "expo-file-system": "^18.0.0",
+    "expo-image-picker": "^16.0.0",
+    "expo-location": "^18.0.0",
+    "expo-network": "^7.0.0",
+    "expo-router": "~4.0.0",
+    "expo-secure-store": "^14.0.0",
+    "expo-status-bar": "~2.2.0",
+    "expo-updates": "^57.0.6",
+    "nativewind": "^4.0.1",
+    "react": "18.3.1",
+    "react-hook-form": "^7.54.0",
+    "react-native": "0.76.9",
+    "react-native-gesture-handler": "~2.21.0",
+    "react-native-maps": "1.18.0",
+    "react-native-mmkv": "^3.1.0",
+    "react-native-reanimated": "~3.16.0",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-svg": "15.8.0",
+    "tailwindcss": "^3.4.0",
+    "zod": "^3.23.8",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@types/react": "~18.3.0",
+    "babel-plugin-module-resolver": "^5.0.3",
+    "typescript": "^5.3.0"
+  },
+  "private": true
+}
