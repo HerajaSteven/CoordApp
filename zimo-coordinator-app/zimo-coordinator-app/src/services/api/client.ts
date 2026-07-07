@@ -1,8 +1,16 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import * as Network from 'expo-network';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { extractAuthPayload } from '@/services/api/authPayload';
 import { Sentry } from '@/config/sentry';
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    retryOnNetworkError?: boolean;
+    maxNetworkRetries?: number;
+  }
+}
 
 const RAW_API_BASE_URL = process.env.EXPO_PUBLIC_API_URL?.trim();
 
@@ -24,6 +32,10 @@ function normalizeApiBaseUrl(url?: string): string {
 }
 
 export const API_BASE_URL = normalizeApiBaseUrl(RAW_API_BASE_URL);
+
+const DEFAULT_NETWORK_RETRIES = 2;
+const DEFAULT_RETRY_DELAY_MS = 350;
+const RETRYABLE_METHODS = new Set(['get', 'head', 'options']);
 
 const KEYS = {
   ACCESS_TOKEN: 'zimo_access_token',
@@ -54,8 +66,82 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+type RequestMeta = {
+  startedAt: number;
+  appStateAtRequest: AppStateStatus;
+  requestId: string;
+};
+
+type RetryableRequestConfig = InternalAxiosRequestConfig & {
+  _retry?: boolean;
+  _retryCount?: number;
+  _meta?: RequestMeta;
+  retryOnNetworkError?: boolean;
+  maxNetworkRetries?: number;
+};
+
+let currentAppState: AppStateStatus = AppState.currentState;
+let lastAppStateChangeAt = Date.now();
+
+AppState.addEventListener('change', (nextState) => {
+  currentAppState = nextState;
+  lastAppStateChangeAt = Date.now();
+});
+
+function isRetriableNetworkError(error: AxiosError): boolean {
+  if (error.response) return false;
+
+  const code = error.code?.toUpperCase();
+  return (
+    code === 'ERR_NETWORK' ||
+    code === 'ECONNABORTED' ||
+    code === 'ETIMEDOUT' ||
+    error.message === 'Network Error' ||
+    error.message.toLowerCase().includes('timeout')
+  );
+}
+
+function shouldRetryRequest(config?: RetryableRequestConfig): boolean {
+  if (!config) return false;
+
+  if (config.retryOnNetworkError === true) return true;
+
+  const method = (config.method ?? 'get').toLowerCase();
+  return RETRYABLE_METHODS.has(method);
+}
+
+function getRetryDelayMs(retryCount: number): number {
+  const exponentialBackoff = DEFAULT_RETRY_DELAY_MS * 2 ** retryCount;
+  const jitter = Math.floor(Math.random() * 120);
+  return exponentialBackoff + jitter;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getNetworkStateSnapshot(): Promise<Record<string, unknown>> {
+  try {
+    const state = await Network.getNetworkStateAsync();
+    return {
+      networkType: state.type,
+      isConnected: state.isConnected,
+      isInternetReachable: state.isInternetReachable,
+    };
+  } catch {
+    return { networkStateReadFailed: true };
+  }
+}
+
 // Attach access token to every request
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const requestConfig = config as RetryableRequestConfig;
+  requestConfig._meta = {
+    startedAt: Date.now(),
+    appStateAtRequest: currentAppState,
+    requestId: `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+  };
+
   const token = await tokenStorage.getAccess();
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -70,8 +156,8 @@ let refreshQueue: Array<(token: string) => void> = [];
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
-    const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
-    if (error.response?.status === 401 && !original._retry) {
+    const original = error.config as RetryableRequestConfig | undefined;
+    if (error.response?.status === 401 && original && !original._retry) {
       original._retry = true;
       if (isRefreshing) {
         return new Promise((resolve) => {
@@ -102,13 +188,47 @@ api.interceptors.response.use(
       }
     }
 
+    if (isRetriableNetworkError(error) && shouldRetryRequest(original)) {
+      const retryCount = original?._retryCount ?? 0;
+      const maxRetries = original?.maxNetworkRetries ?? DEFAULT_NETWORK_RETRIES;
+
+      if (original && retryCount < maxRetries) {
+        original._retryCount = retryCount + 1;
+        await sleep(getRetryDelayMs(retryCount));
+        return api(original);
+      }
+    }
+
     // Report genuine server errors (5xx) and network failures to Sentry.
     // Skip 4xx — those are expected validation/permission responses the UI
     // already handles, and reporting every one would just be noise.
     const status = error.response?.status;
     if (!status || status >= 500) {
+      const meta = original?._meta;
+      const now = Date.now();
+      const network = await getNetworkStateSnapshot();
+
       Sentry.captureException(error, {
-        extra: { url: original?.url, method: original?.method, status }
+        tags: {
+          axios_error: !status ? 'network_or_timeout' : 'server_error',
+          axios_code: error.code ?? 'unknown',
+        },
+        extra: {
+          url: original?.url,
+          method: original?.method,
+          status,
+          code: error.code,
+          baseURL: original?.baseURL,
+          timeoutMs: original?.timeout,
+          retryCount: original?._retryCount ?? 0,
+          maxNetworkRetries: original?.maxNetworkRetries ?? DEFAULT_NETWORK_RETRIES,
+          requestId: meta?.requestId,
+          requestAppState: meta?.appStateAtRequest,
+          currentAppState,
+          msSinceLastAppStateChange: now - lastAppStateChangeAt,
+          requestDurationMs: meta ? now - meta.startedAt : undefined,
+          ...network,
+        }
       });
     }
 
