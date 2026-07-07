@@ -36,6 +36,9 @@ cp .env.example .env
 
 npx expo start
 # Then scan QR code with Expo Go on Android/iOS
+
+# Verify backend is reachable and /health responds quickly
+npm run health:check
 ```
 
 ## Build APK

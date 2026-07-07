@@ -35,7 +35,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (email, password) => {
     const { data } = await authApi.login({ email, password });
-    await tokenStorage.setTokens(data.data.accessToken, data.data.refreshToken);
+    try {
+      await tokenStorage.setTokens(data.data.accessToken, data.data.refreshToken);
+    } catch (err) {
+      const details = err instanceof Error && err.message
+        ? ` ${err.message}`
+        : '';
+      throw new Error(`Login succeeded but failed to save your session securely.${details}`);
+    }
     set({ coordinator: data.data.coordinator, isAuthenticated: true });
   },
 

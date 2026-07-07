@@ -28,7 +28,8 @@ export const tokenStorage = {
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 15000,
+  timeoutErrorMessage: 'Request timed out. Server did not respond.',
   headers: { 'Content-Type': 'application/json' },
 });
 

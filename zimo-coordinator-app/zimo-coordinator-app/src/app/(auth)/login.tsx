@@ -13,6 +13,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '@/store/auth.store';
 import { Button, Input } from '@/components/ui';
+import { getErrorMessage, getLoginErrorMessage } from '@/utils/errors';
 
 const schema = z.object({
   email: z.string().email('Enter a valid email address'),
@@ -34,12 +35,21 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(data.email, data.password);
+    } catch (err: unknown) {
+      const msg = getLoginErrorMessage(err);
+      Alert.alert('Login Failed', msg);
+      setLoading(false);
+      return;
+    }
+
+    try {
       router.replace('/(tabs)');
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: { message?: string } } } })
-          ?.response?.data?.error?.message ?? 'Login failed. Check your credentials.';
-      Alert.alert('Login Failed', msg);
+      const msg = getErrorMessage(
+        err,
+        'Login succeeded, but opening the app failed. Please restart and try again.'
+      );
+      Alert.alert('Navigation Error', msg);
     } finally {
       setLoading(false);
     }
