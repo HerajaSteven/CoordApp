@@ -1,9 +1,29 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import { extractAuthPayload } from '@/services/api/authPayload';
 import { Sentry } from '@/config/sentry';
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+const RAW_API_BASE_URL = process.env.EXPO_PUBLIC_API_URL?.trim();
+
+function getDefaultApiBaseUrl(): string {
+  // Android emulators must call host machine services through 10.0.2.2.
+  if (Platform.OS === 'android') return 'http://10.0.2.2:4000';
+  return 'http://localhost:4000';
+}
+
+function normalizeApiBaseUrl(url?: string): string {
+  const fallback = getDefaultApiBaseUrl();
+  if (!url) return fallback;
+
+  if (Platform.OS === 'android' && /localhost|127\.0\.0\.1/.test(url)) {
+    return url.replace(/localhost|127\.0\.0\.1/g, '10.0.2.2');
+  }
+
+  return url;
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(RAW_API_BASE_URL);
 
 const KEYS = {
   ACCESS_TOKEN: 'zimo_access_token',

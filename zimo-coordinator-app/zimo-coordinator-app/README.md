@@ -33,6 +33,7 @@ cp .env.example .env
 # e.g. EXPO_PUBLIC_API_URL=https://your-server.com
 # or for local dev: EXPO_PUBLIC_API_URL=http://192.168.1.x:4000
 # Use your machine's LAN IP (not localhost) when testing on a real device
+# Android emulator localhost mapping: EXPO_PUBLIC_API_URL=http://10.0.2.2:4000
 
 npx expo start
 # Then scan QR code with Expo Go on Android/iOS
