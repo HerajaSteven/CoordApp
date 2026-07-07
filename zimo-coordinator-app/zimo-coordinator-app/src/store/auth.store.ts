@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authApi, coordinatorApi } from '@/services/api';
+import { extractAuthPayload, extractCoordinator } from '@/services/api/authPayload';
 import { tokenStorage } from '@/services/api/client';
 import type { Coordinator } from '@/types';
 
@@ -26,7 +27,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         return;
       }
       const { data } = await coordinatorApi.me();
-      set({ coordinator: data.data, isAuthenticated: true, isLoading: false });
+      set({ coordinator: extractCoordinator(data), isAuthenticated: true, isLoading: false });
     } catch {
       await tokenStorage.clear();
       set({ coordinator: null, isAuthenticated: false, isLoading: false });
@@ -35,15 +36,16 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (email, password) => {
     const { data } = await authApi.login({ email, password });
+    const auth = extractAuthPayload(data);
     try {
-      await tokenStorage.setTokens(data.data.accessToken, data.data.refreshToken);
+      await tokenStorage.setTokens(auth.accessToken, auth.refreshToken);
     } catch (err) {
       const details = err instanceof Error && err.message
         ? ` ${err.message}`
         : '';
       throw new Error(`Login succeeded but failed to save your session securely.${details}`);
     }
-    set({ coordinator: data.data.coordinator, isAuthenticated: true });
+    set({ coordinator: auth.coordinator, isAuthenticated: true, isLoading: false });
   },
 
   logout: async () => {

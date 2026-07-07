@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { extractAuthPayload } from '@/services/api/authPayload';
 import { Sentry } from '@/config/sentry';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -65,8 +66,7 @@ api.interceptors.response.use(
         const refreshToken = await tokenStorage.getRefresh();
         if (!refreshToken) throw new Error('No refresh token');
         const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
-        const newAccess: string = data.data.accessToken;
-        const newRefresh: string = data.data.refreshToken;
+        const { accessToken: newAccess, refreshToken: newRefresh } = extractAuthPayload(data);
         await tokenStorage.setTokens(newAccess, newRefresh);
         refreshQueue.forEach((cb) => cb(newAccess));
         refreshQueue = [];
