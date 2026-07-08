@@ -33,6 +33,10 @@ function normalizeApiBaseUrl(url?: string): string {
 
 export const API_BASE_URL = normalizeApiBaseUrl(RAW_API_BASE_URL);
 
+if (__DEV__) {
+  console.log(`[api] base URL: ${API_BASE_URL}`);
+}
+
 const DEFAULT_NETWORK_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 350;
 const RETRYABLE_METHODS = new Set(['get', 'head', 'options']);
