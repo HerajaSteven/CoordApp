@@ -1,8 +1,10 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth.store';
 import { useOfflineStore } from '@/store/offline.store';
+import { useSettingsStore } from '@/store/settings.store';
 import { Card, InfoRow, Divider, Button } from '@/components/ui';
 
 function SettingRow({ icon, label, onPress, danger = false, right }: {
@@ -29,10 +31,16 @@ function SettingRow({ icon, label, onPress, danger = false, right }: {
 }
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const coordinator = useAuthStore((s) => s.coordinator);
   const logout = useAuthStore((s) => s.logout);
   const { queue, sync } = useOfflineStore();
+  const superAdminManualCoordinatesEnabled = useSettingsStore((s) => s.superAdminManualCoordinatesEnabled);
+  const setSuperAdminManualCoordinatesEnabled = useSettingsStore((s) => s.setSuperAdminManualCoordinatesEnabled);
+  const superAdminGalleryEvidenceEnabled = useSettingsStore((s) => s.superAdminGalleryEvidenceEnabled);
+  const setSuperAdminGalleryEvidenceEnabled = useSettingsStore((s) => s.setSuperAdminGalleryEvidenceEnabled);
+  const isSuperAdmin = coordinator?.role === 'SuperAdmin';
 
   const handleLogout = () => {
     Alert.alert(
@@ -55,7 +63,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-green-500 pt-14 pb-8 px-5 items-center">
+      <View className="bg-green-500 pb-8 px-5 items-center" style={{ paddingTop: insets.top + 16 }}>
         <View className="w-20 h-20 bg-white/20 rounded-full items-center justify-center mb-3">
           <Text className="text-white text-3xl font-bold">
             {coordinator?.name?.split(' ').map((n) => n[0]).join('').slice(0, 2) ?? 'FC'}
@@ -84,6 +92,42 @@ export default function ProfileScreen() {
         <Card className="mb-4">
           <Text className="font-bold text-text mb-2">Settings</Text>
           <Divider className="mb-2" />
+          {isSuperAdmin && (
+            <>
+              <SettingRow
+                icon="📍"
+                label="Default to manual coordinate entry"
+                right={
+                  <Switch
+                    value={superAdminManualCoordinatesEnabled}
+                    onValueChange={setSuperAdminManualCoordinatesEnabled}
+                    trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+                    thumbColor={superAdminManualCoordinatesEnabled ? '#0D7A3D' : '#F3F4F6'}
+                  />
+                }
+              />
+              <Text className="text-xs text-text-3 mb-2 ml-10">
+                Keep manual coordinate input enabled for weeks, then switch off anytime to return to live GPS capture.
+              </Text>
+              <Divider />
+              <SettingRow
+                icon="📷"
+                label="Use gallery upload for verification photos"
+                right={
+                  <Switch
+                    value={superAdminGalleryEvidenceEnabled}
+                    onValueChange={setSuperAdminGalleryEvidenceEnabled}
+                    trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+                    thumbColor={superAdminGalleryEvidenceEnabled ? '#0D7A3D' : '#F3F4F6'}
+                  />
+                }
+              />
+              <Text className="text-xs text-text-3 mb-2 ml-10">
+                When enabled, photo steps use gallery upload by default instead of opening live camera capture.
+              </Text>
+              <Divider />
+            </>
+          )}
           <SettingRow
             icon="🔄"
             label={queue.length > 0 ? `Sync Now (${queue.length} pending)` : 'Sync Now'}

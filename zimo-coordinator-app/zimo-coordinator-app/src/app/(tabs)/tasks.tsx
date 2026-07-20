@@ -1,10 +1,12 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import * as Network from 'expo-network';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOfflineStore } from '@/store/offline.store';
 import { Card, Button, SectionHeader, Badge } from '@/components/ui';
 
 export default function TasksScreen() {
+  const insets = useSafeAreaInsets();
   const { queue, sync, clearQueue, isSyncing, lastSyncAt } = useOfflineStore();
 
   const handleSync = async () => {
@@ -33,7 +35,7 @@ export default function TasksScreen() {
 
   return (
     <ScrollView className="flex-1 bg-bg">
-      <View className="bg-white pt-14 pb-4 px-5 border-b border-border mb-4">
+      <View className="bg-white pb-4 px-5 border-b border-border mb-4" style={{ paddingTop: insets.top + 12 }}>
         <Text className="text-xl font-bold text-text">Offline Sync</Text>
         <Text className="text-text-3 text-sm mt-0.5">Manage pending offline data</Text>
       </View>

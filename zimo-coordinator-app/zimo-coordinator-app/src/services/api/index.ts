@@ -37,11 +37,46 @@ export interface FarmListParams {
   limit?: number;
 }
 
+async function fetchAllFarms(params: FarmListParams = {}) {
+  const limit = params.limit ?? 100;
+  let page = params.page ?? 1;
+
+  const first = await api.get<ApiResponse<PaginatedResponse<FarmRegistration>>>('/farms', {
+    params: { ...params, page, limit }
+  });
+
+  const firstData = first.data.data;
+  const items = [...firstData.items];
+
+  while (page < firstData.totalPages) {
+    page += 1;
+    const next = await api.get<ApiResponse<PaginatedResponse<FarmRegistration>>>('/farms', {
+      params: { ...params, page, limit }
+    });
+    items.push(...next.data.data.items);
+  }
+
+  return {
+    ...first,
+    data: {
+      ...first.data,
+      data: {
+        ...firstData,
+        items,
+        page: 1,
+        limit,
+        totalPages: Math.ceil(firstData.total / limit) || 1
+      }
+    }
+  };
+}
+
 export const farmsApi = {
   assigned: (params: FarmListParams = {}) =>
     api.get<ApiResponse<PaginatedResponse<FarmRegistration>>>('/farms', { params }),
   all: (params: FarmListParams = {}) =>
     api.get<ApiResponse<PaginatedResponse<FarmRegistration>>>('/farms', { params }),
+  allPages: (params: FarmListParams = {}) => fetchAllFarms(params),
   profile: (appId: string) =>
     api.get<ApiResponse<FarmProfile>>(`/farms/${appId}/profile`),
 };

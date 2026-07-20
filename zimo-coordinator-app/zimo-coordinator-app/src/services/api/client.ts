@@ -40,6 +40,7 @@ if (__DEV__) {
 const DEFAULT_NETWORK_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 350;
 const RETRYABLE_METHODS = new Set(['get', 'head', 'options']);
+const RETRYABLE_SERVER_STATUS = new Set([502, 503, 504]);
 
 const KEYS = {
   ACCESS_TOKEN: 'zimo_access_token',
@@ -112,6 +113,11 @@ function shouldRetryRequest(config?: RetryableRequestConfig): boolean {
 
   const method = (config.method ?? 'get').toLowerCase();
   return RETRYABLE_METHODS.has(method);
+}
+
+function isRetriableServerError(error: AxiosError): boolean {
+  const status = error.response?.status;
+  return typeof status === 'number' && RETRYABLE_SERVER_STATUS.has(status);
 }
 
 function getRetryDelayMs(retryCount: number): number {
@@ -192,7 +198,7 @@ api.interceptors.response.use(
       }
     }
 
-    if (isRetriableNetworkError(error) && shouldRetryRequest(original)) {
+    if ((isRetriableNetworkError(error) || isRetriableServerError(error)) && shouldRetryRequest(original)) {
       const retryCount = original?._retryCount ?? 0;
       const maxRetries = original?.maxNetworkRetries ?? DEFAULT_NETWORK_RETRIES;
 

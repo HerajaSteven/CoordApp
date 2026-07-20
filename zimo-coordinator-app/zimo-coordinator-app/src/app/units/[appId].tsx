@@ -13,8 +13,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { unitsApi } from '@/services/api';
-import { Card, Button, Input, LoadingSpinner, ErrorMessage } from '@/components/ui';
+import { Card, Button, Input, LoadingSpinner, ErrorMessage, HeaderBackButton } from '@/components/ui';
 import type { FarmUnit, UnitType } from '@/types';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -130,6 +131,7 @@ function AddUnitModal({
   onCreated: () => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const { control, handleSubmit, watch, setValue, reset, formState: { errors } } =
     useForm<CreateUnitForm>({
@@ -163,7 +165,7 @@ function AddUnitModal({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <View className="flex-1 bg-bg">
-        <View className="flex-row items-center justify-between px-5 pt-6 pb-4 bg-white border-b border-border">
+        <View className="flex-row items-center justify-between px-5 pb-4 bg-white border-b border-border" style={{ paddingTop: insets.top + 8 }}>
           <Text className="text-lg font-bold text-text">Add New Unit</Text>
           <TouchableOpacity onPress={onClose}>
             <Text className="text-green-500 font-medium">Cancel</Text>
@@ -341,6 +343,7 @@ export default function UnitsScreen() {
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold', color: '#fff' },
+          headerLeft: () => <HeaderBackButton fallbackHref={`/sites/${appId}`} />,
         }}
       />
 

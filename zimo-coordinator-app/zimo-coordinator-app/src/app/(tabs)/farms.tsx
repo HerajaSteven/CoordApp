@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { FlatList } from 'react-native';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { farmsApi } from '@/services/api';
 import { StatusBadge, LoadingSpinner, ErrorMessage } from '@/components/ui';
@@ -56,6 +57,7 @@ function FarmListItem({ farm, onPress }: { farm: FarmRegistration; onPress: () =
 const LIMIT = 20;
 
 export default function FarmsScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -91,7 +93,7 @@ export default function FarmsScreen() {
   return (
     <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-white pt-14 pb-3 px-5 border-b border-border">
+      <View className="bg-white pb-3 px-5 border-b border-border" style={{ paddingTop: insets.top + 12 }}>
         <Text className="text-xl font-bold text-text mb-3">My Farms</Text>
 
         {/* Search */}

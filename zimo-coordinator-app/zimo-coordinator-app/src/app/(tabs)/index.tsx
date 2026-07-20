@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import * as Network from 'expo-network';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { farmsApi } from '@/services/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useOfflineStore } from '@/store/offline.store';
@@ -40,12 +41,13 @@ function FarmCard({ farm, onPress }: { farm: FarmRegistration; onPress: () => vo
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const coordinator = useAuthStore((s) => s.coordinator);
   const { queue, sync, isSyncing, lastSyncAt } = useOfflineStore();
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['farms'],
-    queryFn: () => farmsApi.all({ limit: 50 }),
+    queryFn: () => farmsApi.allPages({ limit: 100 }),
     select: (res) => res.data.data,
   });
 
@@ -72,7 +74,7 @@ export default function DashboardScreen() {
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#0D7A3D" />}
     >
       {/* Header */}
-      <View className="bg-green-500 pt-14 pb-6 px-5">
+      <View className="bg-green-500 pb-6 px-5" style={{ paddingTop: insets.top + 16 }}>
         <Text className="text-white/70 text-sm">Welcome back</Text>
         <Text className="text-white text-xl font-bold mt-0.5">{coordinator?.name}</Text>
         <Text className="text-white/70 text-xs mt-1">{coordinator?.lga}, {coordinator?.state}</Text>
@@ -93,7 +95,7 @@ export default function DashboardScreen() {
       <View className="px-5 -mt-4">
         {/* Stats */}
         <View className="flex-row gap-3 mb-6">
-          <StatCard value={farms.length} label="Assigned" />
+          <StatCard value={farms.length} label="Total Farms" />
           <StatCard value={verified} label="Verified" color="#0D7A3D" />
           <StatCard value={inProgress} label="In Progress" color="#F4B400" />
           <StatCard value={pending} label="Pending" color="#8896A7" />

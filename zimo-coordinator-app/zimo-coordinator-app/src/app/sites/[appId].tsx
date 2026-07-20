@@ -13,9 +13,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sitesApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
-import { Card, Button, Input, LoadingSpinner, ErrorMessage, ProgressBar } from '@/components/ui';
+import { Card, Button, Input, LoadingSpinner, ErrorMessage, ProgressBar, HeaderBackButton } from '@/components/ui';
 import type { FarmSite } from '@/types';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -84,6 +85,7 @@ function AddSiteModal({
   onCreated: () => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const insets = useSafeAreaInsets();
   const { currentLocation, isLocating, locateMe } = useGPS();
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm<CreateSiteForm>({
@@ -122,7 +124,7 @@ function AddSiteModal({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <View className="flex-1 bg-bg">
-        <View className="flex-row items-center justify-between px-5 pt-6 pb-4 bg-white border-b border-border">
+        <View className="flex-row items-center justify-between px-5 pb-4 bg-white border-b border-border" style={{ paddingTop: insets.top + 8 }}>
           <Text className="text-lg font-bold text-text">Add New Site</Text>
           <TouchableOpacity onPress={onClose}>
             <Text className="text-green-500 font-medium">Cancel</Text>
@@ -249,6 +251,7 @@ export default function SitesScreen() {
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold', color: '#fff' },
+          headerLeft: () => <HeaderBackButton fallbackHref={`/farm/${appId}`} />,
         }}
       />
 

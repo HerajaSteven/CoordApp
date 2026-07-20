@@ -17,6 +17,8 @@ import { farmsApi, verificationApi, boundaryApi, categoriesApi } from '@/service
 import { useGPS } from '@/features/gps/useGPS';
 import { useCamera } from '@/features/camera/useCamera';
 import { useOfflineStore } from '@/store/offline.store';
+import { useAuthStore } from '@/store/auth.store';
+import { useSettingsStore } from '@/store/settings.store';
 import {
   Button,
   Card,
@@ -27,6 +29,7 @@ import {
   ProgressBar,
   Badge,
   InfoRow,
+  HeaderBackButton,
 } from '@/components/ui';
 import type { FarmTypeCategory } from '@/types';
 import * as Network from 'expo-network';
@@ -67,7 +70,10 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
   const [mismatch, setMismatch] = useState(false);
   const [mismatchReason, setMismatchReason] = useState('');
   const [loading, setLoading] = useState(false);
-  const { takePhoto, photos } = useCamera(appId);
+  const { takePhoto, pickFromGallery, photos } = useCamera(appId);
+  const coordinator = useAuthStore((s) => s.coordinator);
+  const superAdminGalleryEvidenceEnabled = useSettingsStore((s) => s.superAdminGalleryEvidenceEnabled);
+  const shouldUseGallery = coordinator?.role === 'SuperAdmin' && superAdminGalleryEvidenceEnabled;
   const qc = useQueryClient();
 
   const selfie = photos.find((p) => p.slotKey === 'id-selfie');
@@ -102,7 +108,13 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
 
         <View className="flex-row gap-3 mb-4">
           <TouchableOpacity
-            onPress={() => takePhoto('id-selfie')}
+            onPress={() => {
+              if (shouldUseGallery) {
+                pickFromGallery('id-selfie');
+                return;
+              }
+              takePhoto('id-selfie');
+            }}
             className="flex-1 aspect-square bg-bg rounded-xl items-center justify-center border-2 border-dashed border-border"
           >
             {selfie ? (
@@ -116,7 +128,13 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => takePhoto('id-doc')}
+            onPress={() => {
+              if (shouldUseGallery) {
+                pickFromGallery('id-doc');
+                return;
+              }
+              takePhoto('id-doc');
+            }}
             className="flex-1 aspect-square bg-bg rounded-xl items-center justify-center border-2 border-dashed border-border"
           >
             {idDoc ? (
@@ -245,36 +263,87 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType }: {
 // ─── Step: GPS ────────────────────────────────────────────────────────────────
 function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; onNext: () => void }) {
   const { currentLocation, isLocating, isWalking, walkPoints, locateMe, startBoundaryWalk, stopBoundaryWalk } = useGPS();
+  const coordinator = useAuthStore((s) => s.coordinator);
+  const defaultManualCoordinatesEnabled = useSettingsStore((s) => s.superAdminManualCoordinatesEnabled);
+  const isSuperAdmin = coordinator?.role === 'SuperAdmin';
   const [gpsSaved, setGpsSaved] = useState(false);
   const [boundarySaved, setBoundarySaved] = useState(false);
+  const [manualMode, setManualMode] = useState(isSuperAdmin && defaultManualCoordinatesEnabled);
+  const [manualLat, setManualLat] = useState('');
+  const [manualLng, setManualLng] = useState('');
+  const [manualAccuracy, setManualAccuracy] = useState('10');
   const [loading, setLoading] = useState(false);
   const qc = useQueryClient();
   const enqueue = useOfflineStore((s) => s.enqueue);
 
+  const saveGpsPoint = async (lat: number, lng: number, accuracyMeters: number) => {
+    const state = await Network.getNetworkStateAsync();
+    if (state.isConnected) {
+      await verificationApi.gps(
+        appId,
+        {
+          centerLat: lat,
+          centerLng: lng,
+          accuracyMeters
+        },
+        unitId
+      );
+    } else {
+      enqueue('boundaryPoints', appId, {
+        type: 'gps_center',
+        centerLat: lat,
+        centerLng: lng,
+        accuracyMeters
+      });
+    }
+  };
+
   const handleLocate = async () => {
     const loc = await locateMe();
-    if (!loc) return;
+    if (!loc) {
+      setManualMode(true);
+      Alert.alert('GPS Unavailable', 'Could not capture GPS. Please enter coordinates manually.');
+      return;
+    }
     setLoading(true);
     try {
-      const state = await Network.getNetworkStateAsync();
-      if (state.isConnected) {
-        await verificationApi.gps(appId, {
-          centerLat: loc.lat,
-          centerLng: loc.lng,
-          accuracyMeters: loc.accuracyMeters,
-        }, unitId);
-      } else {
-        enqueue('boundaryPoints', appId, {
-          type: 'gps_center',
-          centerLat: loc.lat,
-          centerLng: loc.lng,
-          accuracyMeters: loc.accuracyMeters,
-        });
-      }
+      await saveGpsPoint(loc.lat, loc.lng, loc.accuracyMeters);
       setGpsSaved(true);
       await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
     } catch {
+      setManualMode(true);
       Alert.alert('Error', 'Failed to save GPS coordinates.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManualSave = async () => {
+    const lat = Number(manualLat);
+    const lng = Number(manualLng);
+    const accuracy = Number(manualAccuracy || '10');
+
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      Alert.alert('Invalid Latitude', 'Latitude must be a number between -90 and 90.');
+      return;
+    }
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      Alert.alert('Invalid Longitude', 'Longitude must be a number between -180 and 180.');
+      return;
+    }
+    if (!Number.isFinite(accuracy) || accuracy < 0) {
+      Alert.alert('Invalid Accuracy', 'Accuracy must be 0 or greater.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await saveGpsPoint(lat, lng, accuracy);
+      setGpsSaved(true);
+      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      Alert.alert('Saved', 'Manual coordinates saved successfully.');
+    } catch {
+      Alert.alert('Error', 'Failed to save manual coordinates.');
     } finally {
       setLoading(false);
     }
@@ -331,6 +400,52 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
           variant={gpsSaved ? 'secondary' : 'primary'}
           fullWidth
         />
+
+        <TouchableOpacity
+          onPress={() => setManualMode((v) => !v)}
+          className="mt-3"
+          disabled={gpsSaved}
+        >
+          <Text className="text-xs text-green-500 text-center font-medium">
+            {manualMode ? 'Hide manual coordinate entry' : 'GPS disabled? Enter coordinates manually'}
+          </Text>
+        </TouchableOpacity>
+
+        {manualMode && !gpsSaved && (
+          <View className="mt-3">
+            <Input
+              label="Latitude"
+              value={manualLat}
+              onChangeText={setManualLat}
+              keyboardType="numbers-and-punctuation"
+              placeholder="e.g. 7.401234"
+              containerStyle={{ marginBottom: 10 }}
+            />
+            <Input
+              label="Longitude"
+              value={manualLng}
+              onChangeText={setManualLng}
+              keyboardType="numbers-and-punctuation"
+              placeholder="e.g. 3.903456"
+              containerStyle={{ marginBottom: 10 }}
+            />
+            <Input
+              label="Accuracy (meters)"
+              value={manualAccuracy}
+              onChangeText={setManualAccuracy}
+              keyboardType="numeric"
+              placeholder="10"
+              containerStyle={{ marginBottom: 12 }}
+            />
+            <Button
+              label={loading ? 'Saving...' : 'Save Manual Coordinates'}
+              onPress={handleManualSave}
+              loading={loading}
+              variant="secondary"
+              fullWidth
+            />
+          </View>
+        )}
       </Card>
 
       {/* Boundary Walk */}
@@ -656,7 +771,10 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
   onNext: () => void;
   farmType: 'crop' | 'livestock' | 'mixed';
 }) {
-  const { photos, takePhoto, uploadPhoto, removePhoto } = useCamera(appId);
+  const { photos, takePhoto, pickFromGallery, uploadPhoto, removePhoto } = useCamera(appId);
+  const coordinator = useAuthStore((s) => s.coordinator);
+  const superAdminGalleryEvidenceEnabled = useSettingsStore((s) => s.superAdminGalleryEvidenceEnabled);
+  const shouldUseGallery = coordinator?.role === 'SuperAdmin' && superAdminGalleryEvidenceEnabled;
   const [uploading, setUploading] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const { currentLocation } = useGPS();
@@ -670,7 +788,7 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
   const completedCount = completedSlots.length;
 
   const handleCapture = async (slotKey: string) => {
-    const photo = await takePhoto(slotKey);
+    const photo = shouldUseGallery ? await pickFromGallery(slotKey) : await takePhoto(slotKey);
     if (!photo) return;
     setUploading(slotKey);
     await uploadPhoto(photo, 'evidence', currentLocation?.lat, currentLocation?.lng);
@@ -701,6 +819,11 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
           <Text className="font-bold text-text">Required Photos</Text>
           <Badge label={`${completedCount}/${requiredCount}`} variant={completedCount === requiredCount ? 'green' : 'yellow'} />
         </View>
+        {coordinator?.role === 'SuperAdmin' && (
+          <Text className="text-xs text-text-3 mb-3">
+            Capture mode: {shouldUseGallery ? 'Gallery Upload' : 'Live Camera'} (change in Profile settings)
+          </Text>
+        )}
 
         {requiredSlots.map((slot) => {
           const photo = photos.find((p) => p.slotKey === slot.key);
@@ -804,6 +927,9 @@ function ReviewStep({ appId, unitId, farmName, onSubmit }: {
 export default function VerificationWizard() {
   const { appId, unitId, unitLabel } = useLocalSearchParams<{ appId: string; unitId?: string; unitLabel?: string }>();
   const router = useRouter();
+  const qc = useQueryClient();
+  const coordinator = useAuthStore((s) => s.coordinator);
+  const [isApproving, setIsApproving] = useState(false);
 
   const { data: profile, isLoading, isError, refetch } = useQuery({
     queryKey: ['farm-profile', appId, unitId],
@@ -833,13 +959,44 @@ export default function VerificationWizard() {
     ]);
   };
 
+  const handleFinalApprove = async () => {
+    setIsApproving(true);
+    try {
+      await verificationApi.approve(appId, unitId);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['farm-profile', appId] }),
+        qc.invalidateQueries({ queryKey: ['farms'] })
+      ]);
+      Alert.alert('Verified', 'Farm verification has been approved and marked as verified.', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+    } catch (err: unknown) {
+      Alert.alert(
+        'Approval Failed',
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ??
+          'Could not mark this verification as approved.'
+      );
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   if (isLoading) return <LoadingSpinner />;
   if (isError || !profile) return <ErrorMessage message="Could not load farm data." onRetry={refetch} />;
 
   if (overallStatus === 'submitted' || overallStatus === 'approved') {
+    const isSuperAdmin = coordinator?.role === 'SuperAdmin';
     return (
       <View className="flex-1 bg-bg items-center justify-center p-6">
-        <Stack.Screen options={{ headerShown: true, title: 'Verification', headerStyle: { backgroundColor: '#0D7A3D' }, headerTintColor: '#fff' }} />
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            title: 'Verification',
+            headerStyle: { backgroundColor: '#0D7A3D' },
+            headerTintColor: '#fff',
+            headerLeft: () => <HeaderBackButton fallbackHref={`/farm/${appId}`} />
+          }}
+        />
         <Text className="text-5xl mb-4">🏆</Text>
         <Text className="text-xl font-bold text-text mb-2">
           {overallStatus === 'approved' ? 'Verification Approved' : 'Submitted for Review'}
@@ -849,6 +1006,15 @@ export default function VerificationWizard() {
             ? 'This farm has been fully verified and approved.'
             : 'Verification has been submitted. A supervisor will review within 48 hours.'}
         </Text>
+        {overallStatus === 'submitted' && isSuperAdmin && (
+          <Button
+            label={isApproving ? 'Marking Verified...' : 'Mark as Verified'}
+            onPress={handleFinalApprove}
+            loading={isApproving}
+            fullWidth
+          />
+        )}
+        {overallStatus === 'submitted' && isSuperAdmin && <View className="h-3" />}
         <Button label="Back to Farm" onPress={() => router.back()} variant="secondary" />
       </View>
     );
@@ -863,6 +1029,7 @@ export default function VerificationWizard() {
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
           headerTitleStyle: { color: '#fff' },
+          headerLeft: () => <HeaderBackButton fallbackHref={`/farm/${appId}`} />,
         }}
       />
 

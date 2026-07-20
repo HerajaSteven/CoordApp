@@ -9,7 +9,7 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { incidentsApi } from '@/services/api';
-import { Button, Input, Card } from '@/components/ui';
+import { Button, Input, Card, HeaderBackButton } from '@/components/ui';
 import { getErrorMessage } from '@/utils/errors';
 
 const INCIDENT_TYPES = [
@@ -86,6 +86,7 @@ export default function IncidentReportScreen() {
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold', color: '#fff' },
+          headerLeft: () => <HeaderBackButton fallbackHref={`/farm/${appId}`} />,
         }}
       />
 

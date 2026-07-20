@@ -11,11 +11,15 @@
     "preview": {
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_API_URL": "https://kym-production-b5b7.up.railway.app",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://kym-production-b5b7.up.railway.app"
+      }
     }
   },
   "submit": {

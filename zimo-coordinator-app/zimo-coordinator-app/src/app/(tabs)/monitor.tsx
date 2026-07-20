@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { farmsApi, incidentsApi } from '@/services/api';
+import { farmsApi } from '@/services/api';
 import { Card, SectionHeader, StatusBadge, LoadingSpinner } from '@/components/ui';
 import type { FarmRegistration } from '@/types';
 
@@ -28,18 +29,24 @@ function AlertCard({ farm, onPress }: { farm: FarmRegistration; onPress: () => v
 }
 
 export default function MonitorScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const { data: farmsData, isLoading: farmsLoading, refetch, isRefetching } = useQuery({
     queryKey: ['farms'],
-    queryFn: () => farmsApi.all({ limit: 50 }),
+    queryFn: () => farmsApi.allPages({ limit: 100 }),
     select: (res) => res.data.data,
   });
 
   const farms = farmsData?.items ?? [];
   const flagged = farms.filter((f) => f.status === 'flagged');
   const inProgress = farms.filter((f) => f.status === 'reviewing');
-  const unvisited = farms.filter((f) => f.paymentStatus === 'paid' && f.status === 'reviewing' && !flagged.includes(f));
+  const unvisited = farms.filter(
+    (f) =>
+      String(f.paymentStatus ?? '').trim().toLowerCase() === 'paid' &&
+      f.status === 'reviewing' &&
+      !flagged.includes(f)
+  );
 
   const alerts = [...flagged, ...unvisited].slice(0, 10);
 
@@ -50,7 +57,7 @@ export default function MonitorScreen() {
       className="flex-1 bg-bg"
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#0D7A3D" />}
     >
-      <View className="bg-white pt-14 pb-4 px-5 border-b border-border mb-4">
+      <View className="bg-white pb-4 px-5 border-b border-border mb-4" style={{ paddingTop: insets.top + 12 }}>
         <Text className="text-xl font-bold text-text">Monitoring</Text>
         <Text className="text-text-3 text-sm mt-0.5">Alerts and farm status overview</Text>
       </View>

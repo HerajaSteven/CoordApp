@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { View, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth.store';
 import { Redirect } from 'expo-router';
 
@@ -20,7 +21,12 @@ function TabIcon({ focused, label, icon }: { focused: boolean; label: string; ic
 
 export default function TabsLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const insets = useSafeAreaInsets();
   if (!isAuthenticated) return <Redirect href="/(auth)/login" />;
+
+  // Tab bar must clear the system gesture/home indicator on every device
+  const tabBarPaddingBottom = Math.max(8, insets.bottom);
+  const tabBarHeight = 56 + tabBarPaddingBottom;
 
   return (
     <Tabs
@@ -30,8 +36,8 @@ export default function TabsLayout() {
           backgroundColor: '#FFFFFF',
           borderTopColor: '#E8EDF3',
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
+          height: tabBarHeight,
+          paddingBottom: tabBarPaddingBottom,
         },
         tabBarShowLabel: false,
       }}

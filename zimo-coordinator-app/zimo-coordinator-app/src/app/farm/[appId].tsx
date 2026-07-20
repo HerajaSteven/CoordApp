@@ -20,6 +20,7 @@ import {
   ProgressBar,
   Divider,
   Badge,
+  HeaderBackButton,
 } from '@/components/ui';
 import type { TimelineEvent } from '@/types';
 
@@ -96,7 +97,10 @@ export default function FarmDetailScreen() {
   const completedSteps = ver?.completedSteps ?? [];
   const profileCompletion = computed.profileCompletion ?? 0;
 
-  const canVerify = reg.paymentStatus === 'paid' && computed.verificationStatus !== 'approved';
+  const isLockedStatus = ['approved', 'submitted', 'verified'].includes(
+    String(computed.verificationStatus ?? '').trim().toLowerCase()
+  );
+  const canVerify = !isLockedStatus;
 
   return (
     <View className="flex-1 bg-bg">
@@ -108,6 +112,7 @@ export default function FarmDetailScreen() {
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: 'bold', color: '#fff' },
           headerBackTitle: 'Back',
+          headerLeft: () => <HeaderBackButton fallbackHref="/(tabs)/farms" />,
         }}
       />
 
@@ -322,15 +327,22 @@ export default function FarmDetailScreen() {
               </Card>
             )}
 
-            {canVerify && (
-              <TouchableOpacity
-                onPress={() => router.push(`/verification/${appId}`)}
-                className="bg-green-500 rounded-2xl p-4 items-center"
-                activeOpacity={0.85}
-              >
-                <Text className="text-white font-bold text-base">Open Verification Wizard</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              onPress={() => {
+                if (canVerify) {
+                  router.push(`/verification/${appId}`);
+                  return;
+                }
+
+                Alert.alert('Verification Unavailable', 'This farm is already submitted/verified and cannot be edited.');
+              }}
+              className={`rounded-2xl p-4 items-center ${canVerify ? 'bg-green-500' : 'bg-gray-300'}`}
+              activeOpacity={0.85}
+            >
+              <Text className={`font-bold text-base ${canVerify ? 'text-white' : 'text-text-3'}`}>
+                {canVerify ? 'Open Verification Wizard' : 'Verification Unavailable'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 

@@ -9,6 +9,7 @@ import {
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 
 // ─── Button ───────────────────────────────────────────────────────────────────
 interface ButtonProps {
@@ -218,6 +219,27 @@ export function Toggle({ value, onToggle }: { value: boolean; onToggle: () => vo
         className="w-5 h-5 bg-white rounded-full shadow-sm"
         style={{ transform: [{ translateX: value ? 24 : 2 }] }}
       />
+    </TouchableOpacity>
+  );
+}
+
+// ─── HeaderBackButton ───────────────────────────────────────────────────────
+export function HeaderBackButton({ fallbackHref }: { fallbackHref: string }) {
+  const router = useRouter();
+
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        if (router.canGoBack()) {
+          router.back();
+          return;
+        }
+        router.replace(fallbackHref as never);
+      }}
+      className="px-2 py-1"
+      activeOpacity={0.7}
+    >
+      <Text className="text-white text-lg font-semibold">←</Text>
     </TouchableOpacity>
   );
 }
