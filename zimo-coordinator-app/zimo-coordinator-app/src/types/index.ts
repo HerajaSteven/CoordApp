@@ -331,6 +331,60 @@ export interface CreateUnitInput {
   notes?: string;
 }
 
+// ─── Cluster Farms (admin-created, assigned to coordinator for field verification) ──
+export type ClusterFarmStatus = 'pending' | 'in_progress' | 'verified' | 'flagged';
+
+export interface ClusterFarmMember {
+  name: string;
+  farmerName: string;
+  size: string;
+}
+
+export interface ClusterVerification {
+  gpsLat: number | null;
+  gpsLng: number | null;
+  accuracyMeters: number | null;
+  gpsVerifiedAt: string | null;
+  entrancePhotoUrl: string | null;
+  overviewPhotoUrl: string | null;
+  coordinatorNotes: string | null;
+  verifiedAt: string | null;
+  verifiedBy: string | null;
+}
+
+export interface ClusterFarm {
+  clusterId: string;
+  sourceClusterId: string;
+  label: string;
+  description: string | null;
+  state: string;
+  lga: string;
+  address: string | null;
+  memberFarms: ClusterFarmMember[];
+  status: ClusterFarmStatus;
+  verification: ClusterVerification;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClusterListResponse {
+  clusters: ClusterFarm[];
+  summary: {
+    total: number;
+    verified: number;
+    pending: number;
+  };
+}
+
+export interface VerifyClusterInput {
+  gpsLat: number;
+  gpsLng: number;
+  accuracyMeters: number;
+  coordinatorNotes?: string;
+  entrancePhotoUrl?: string;
+  overviewPhotoUrl?: string;
+}
+
 // ─── Pagination ───────────────────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   items: T[];

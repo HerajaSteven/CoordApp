@@ -55,6 +55,12 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="clusters"
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Clusters" icon="🗂️" />,
+        }}
+      />
+      <Tabs.Screen
         name="monitor"
         options={{
           tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Monitor" icon="📊" />,

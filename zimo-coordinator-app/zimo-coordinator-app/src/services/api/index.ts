@@ -13,6 +13,9 @@ import type {
   Incident,
   OfflineQueueItem,
   TimelineEvent,
+  ClusterListResponse,
+  ClusterFarm,
+  VerifyClusterInput,
 } from '@/types';
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -221,6 +224,15 @@ export const sitesApi = {
     api.patch(`/farms/${appId}/sites/${siteId}`, body),
   verify: (appId: string, siteId: string, body: import('@/types').VerifySiteInput) =>
     api.post(`/farms/${appId}/sites/${siteId}/verify`, body),
+};
+
+// ─── Cluster Farms (admin-created, assigned to coordinator for field verification) ─
+export const clustersApi = {
+  list: () => api.get<ApiResponse<ClusterListResponse>>('/clusters'),
+  get: (clusterId: string) =>
+    api.get<ApiResponse<{ cluster: ClusterFarm; assignment: unknown }>>(`/clusters/${clusterId}`),
+  verify: (clusterId: string, body: VerifyClusterInput) =>
+    api.post<ApiResponse<ClusterFarm>>(`/clusters/${clusterId}/verify`, body),
 };
 
 // ─── Farm Units (ponds, plots, etc. within a site) ────────────────────────────
