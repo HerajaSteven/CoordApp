@@ -22,40 +22,19 @@ module.exports = {
       },
 
       /*
-        ── WHY THE APP READ AS TINY ───────────────────────────────────────
+        ── NO fontSize OVERRIDE HERE, DELIBERATELY ────────────────────────
 
-        It was not scaling wrongly. It matched the prototype almost
-        exactly: the mock's commonest sizes are 12px (114 uses) and 14px
-        (68), and this app's are text-xs at 12 (93 uses) and text-sm at 14
-        (60). A faithful implementation of a design that is small for a
-        phone.
+        There was one, in absolute pixels, written when the app looked
+        small and the cause was still unknown. It would have half-worked
+        and hidden the real fault: absolute sizes escape rem, so the type
+        would have come right while every padding, margin and gap stayed
+        shrunk — a design pulled out of proportion rather than restored.
 
-        The mock is a 480px column, `margin: 0 auto`, judged on a monitor —
-        about 12cm across at desk distance. The same numbers on a handset
-        are 6.5cm at arm's length, so type that read comfortably in the
-        browser is genuinely small in the hand. The mock's 34 elements at
-        `height:18px` say the same thing: Android asks 48dp of a touch
-        target.
-
-        So the scale is raised here rather than at 199 call sites, and
-        raised ABOVE the prototype rather than to it. Body text lands at
-        16, which is what Android asks for body copy, and the smallest
-        label at 14, which is its floor for anything a person has to read
-        rather than glance at.
-
-        These are absolute values, not a multiplier, so each one can be
-        argued with on its own. Poppins also runs a little smaller than
-        Roboto at the same point size, which this absorbs.
+        The fault was `inlineRem`, defaulting to 14, which rendered the
+        whole scale at 87.5%. With it off, Tailwind's own rem values are
+        correct again and respond to the root rem the app sets per device.
+        See metro.config.js and the root layout.
       */
-      fontSize: {
-        xs: '14px',    // was 12 — the app's commonest size, doing body work
-        sm: '16px',    // was 14
-        base: '18px',  // was 16
-        lg: '20px',    // was 18
-        xl: '22px',    // was 20
-        '2xl': '27px', // was 24
-        '3xl': '33px', // was 30
-      },
       colors: {
         green: {
           DEFAULT: "#0D7A3D",

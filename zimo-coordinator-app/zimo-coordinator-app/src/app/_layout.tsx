@@ -17,6 +17,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { useNetworkSync } from '@/hooks/useNetworkSync';
 import { initSentry } from '@/config/sentry';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useRootScale } from '@/theme/rootScale';
 
 initSentry();
 
@@ -32,6 +33,8 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const loadSession = useAuthStore((s) => s.loadSession);
+  /* One number decides how large the whole design draws — see rootScale. */
+  useRootScale();
   useNetworkSync();
 
   useEffect(() => {
