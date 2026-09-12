@@ -1297,10 +1297,26 @@ export default function VerificationWizard() {
   );
   const stepIndex = STEPS.indexOf(activeStep);
 
+  /*
+    Where to go back to, for a step opened from another one.
+
+    The capacity step sends you to farm type when nothing has been
+    declared for the farm. Without this, saving there walks FORWARD to
+    GPS and leaves you to find your own way back to the step you were
+    actually on — which reads as being bounced around the wizard.
+  */
+  const [returnTo, setReturnTo] = useState<Step | null>(null);
+
   const goToNext = useCallback(() => {
+    if (returnTo) {
+      setActiveStep(returnTo);
+      setReturnTo(null);
+      return;
+    }
+
     const next = STEPS[stepIndex + 1];
     if (next) setActiveStep(next);
-  }, [stepIndex]);
+  }, [stepIndex, returnTo]);
 
   const handleSubmitSuccess = () => {
     Alert.alert('Submitted!', 'Verification submitted for approval.', [
@@ -1439,7 +1455,10 @@ export default function VerificationWizard() {
             farmType={farmType}
             declared={declared}
             recorded={recorded}
-            onEditTypes={() => setActiveStep('farmType')}
+            onEditTypes={() => {
+              setReturnTo('capacity');
+              setActiveStep('farmType');
+            }}
           />
         )}
         {activeStep === 'evidence' && (
