@@ -430,3 +430,19 @@ export interface OfflineQueueItem {
   clientTimestamp: string;
   createdAt: number;
 }
+
+// ─── Map ──────────────────────────────────────────────────────────────────────
+/**
+ * Which tiles to draw, decided by the platform rather than compiled in.
+ *
+ * openstreetmap.org's tiles are donated infrastructure whose usage policy
+ * forbids high-volume commercial traffic. Fetching the URL means an
+ * operator repoints one setting and every phone follows, instead of every
+ * agent needing a new APK before the traffic stops.
+ */
+export interface MapConfig {
+  configured: boolean;
+  provider: string | null;
+  tileUrl: string;
+  attribution: string;
+}

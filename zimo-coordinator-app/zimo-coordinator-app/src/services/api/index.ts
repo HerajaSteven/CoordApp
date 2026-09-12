@@ -1,20 +1,21 @@
 import { api } from './client';
 import type {
-  LoginInput,
-  AuthTokens,
-  Coordinator,
-  FarmRegistration,
-  FarmProfile,
-  FarmTypeCategory,
-  PaginatedResponse,
   ApiResponse,
-  VerificationRecord,
+  AuthTokens,
+  ClusterFarm,
+  ClusterListResponse,
+  Coordinator,
+  FarmProfile,
+  FarmRegistration,
+  FarmTypeCategory,
   FarmVisit,
   Incident,
+  LoginInput,
+  MapConfig,
   OfflineQueueItem,
+  PaginatedResponse,
   TimelineEvent,
-  ClusterListResponse,
-  ClusterFarm,
+  VerificationRecord,
   VerifyClusterInput,
 } from '@/types';
 
@@ -88,6 +89,11 @@ export const farmsApi = {
 export const categoriesApi = {
   list: (kind?: 'crop' | 'livestock') =>
     api.get<ApiResponse<FarmTypeCategory[]>>('/categories', { params: { kind, status: 'active' } }),
+};
+
+// ─── Map ──────────────────────────────────────────────────────────────────────
+export const mapApi = {
+  config: () => api.get<ApiResponse<MapConfig>>('/map/config'),
 };
 
 // ─── Verification Steps ───────────────────────────────────────────────────────
