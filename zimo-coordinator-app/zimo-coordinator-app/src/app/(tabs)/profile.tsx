@@ -1,5 +1,13 @@
 import React from 'react';
-import { View, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import {
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Switch,
+  PixelRatio,
+  useWindowDimensions,
+} from 'react-native';
 import { Text } from '@/components/ui/typography';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,6 +42,8 @@ function SettingRow({ icon, label, onPress, danger = false, right }: {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  /* What this handset says its screen is — see the Screen row below. */
+  const window = useWindowDimensions();
   const router = useRouter();
   const coordinator = useAuthStore((s) => s.coordinator);
   const logout = useAuthStore((s) => s.logout);
@@ -137,6 +147,35 @@ export default function ProfileScreen() {
           />
           <Divider />
           <SettingRow icon="ℹ️" label="App Version" right={<Text className="text-text-3 text-sm">1.0.0</Text>} />
+          <Divider />
+          {/*
+            ── WHAT THIS DEVICE SAYS ITS SCREEN IS ────────────────────────
+
+            "The app looks zoomed out" is a report nobody can act on from a
+            desk: it could be the type scale, the OS display size, or a
+            handset reporting a width no phone should. These are the three
+            numbers that tell them apart.
+
+            `dp` is the width the layout is drawn into — a phone is around
+            360-430, and anything much above that renders a phone design
+            with room to spare, which reads as zoomed out. `scale` is the
+            device's pixel density, `font` the reader's own text setting.
+
+            Kept in the app rather than in a debug build, because the
+            person who can read it is a coordinator in a field, and asking
+            them to install a second app to answer a support question is
+            not a plan.
+          */}
+          <SettingRow
+            icon="📐"
+            label="Screen"
+            right={
+              <Text className="text-text-3 text-sm">
+                {Math.round(window.width)}×{Math.round(window.height)} dp · {PixelRatio.get()}x ·
+                font {PixelRatio.getFontScale().toFixed(2)}
+              </Text>
+            }
+          />
           <Divider />
           <SettingRow icon="📋" label="Clear Cache" onPress={() => {
             Alert.alert('Clear Cache', 'This clears downloaded data. Pending offline data will not be affected.', [

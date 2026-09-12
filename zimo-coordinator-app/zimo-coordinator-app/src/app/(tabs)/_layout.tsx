@@ -42,7 +42,12 @@ export default function TabsLayout() {
     same place — it grows by exactly what the text grew by, and no further
     than the cap in typography.tsx.
   */
-  const tabBarHeight = scaled(56) + tabBarPaddingBottom;
+  /*
+    62 rather than 56 because the labels grew with the type scale — see
+    tailwind.config.js. A bar sized for 12dp labels clips 14dp ones, and
+    the clipping is what the last build was reported as.
+  */
+  const tabBarHeight = scaled(62) + tabBarPaddingBottom;
 
   return (
     <Tabs
