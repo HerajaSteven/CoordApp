@@ -66,6 +66,11 @@ export interface VerificationRecord {
   completedSteps: VerificationStep[];
   overallStatus: VerificationStatus;
   farmTypeSelected: 'crop' | 'livestock' | 'mixed' | null;
+  /** WHICH crops and which livestock, chosen at the farm type step. */
+  farmTypeCategories: {
+    crop: string[];
+    livestock: string[];
+  };
   identity: {
     status: 'pending' | 'matched' | 'confirmed' | 'mismatch';
     confidence: number | null;

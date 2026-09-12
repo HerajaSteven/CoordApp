@@ -31,7 +31,7 @@ import {
   InfoRow,
   HeaderBackButton,
 } from '@/components/ui';
-import type { FarmTypeCategory } from '@/types';
+import type { CategoryFieldDef, DynamicCategoryEntry, FarmTypeCategory } from '@/types';
 import * as Network from 'expo-network';
 
 const STEPS = ['identity', 'farmType', 'gps', 'landOwnership', 'infrastructure', 'capacity', 'evidence', 'review'] as const;
@@ -205,22 +205,102 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
 }
 
 // ─── Step: Farm Type ──────────────────────────────────────────────────────────
-function FarmTypeStep({ appId, unitId, onNext, currentFarmType }: {
+
+/**
+ * Which categories a farm keeps, chosen where the design puts it.
+ *
+ * ── WHY THE QUESTION BELONGS ON THIS STEP ────────────────────────────────
+ *
+ * This step "determines the verification checklist used for this farm", and
+ * "livestock farm" does not determine it — poultry and catfish are asked
+ * different questions. Without the answer the capacity step had nothing to
+ * narrow itself by and put up a form for every category: six for livestock,
+ * sixteen for crops, each with required fields. A coordinator standing in a
+ * poultry yard was asked for a stocking density for fish.
+ */
+function CategoryChips({ categories, selected, onToggle }: {
+  categories: FarmTypeCategory[];
+  selected: string[];
+  onToggle: (key: string) => void;
+}) {
+  return (
+    <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+      {categories.map((category) => {
+        const chosen = selected.includes(category.categoryKey);
+
+        return (
+          <TouchableOpacity
+            key={category._id}
+            onPress={() => onToggle(category.categoryKey)}
+            className={`flex-row items-center px-3 py-2.5 rounded-xl border-2 ${
+              chosen ? 'border-green-500 bg-green-50' : 'border-border bg-card'
+            }`}
+          >
+            {category.icon ? <Text className="text-base mr-1.5">{category.icon}</Text> : null}
+            <Text className={`text-sm ${chosen ? 'text-green-600 font-semibold' : 'text-text-2'}`}>
+              {category.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
   appId: string;
   unitId?: string;
   onNext: (type: 'crop' | 'livestock' | 'mixed') => void;
   currentFarmType: string | null;
+  declared: { crop: string[]; livestock: string[] };
 }) {
   const [selected, setSelected] = useState<'crop' | 'livestock' | 'mixed'>(
     (currentFarmType as 'crop' | 'livestock' | 'mixed') ?? 'crop'
   );
+  const [chosenCrops, setChosenCrops] = useState<string[]>(declared.crop);
+  const [chosenLivestock, setChosenLivestock] = useState<string[]>(declared.livestock);
   const [loading, setLoading] = useState(false);
   const qc = useQueryClient();
 
+  const { data: categories, isLoading: categoriesLoading } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.list(),
+    select: (res) => res.data.data,
+  });
+
+  const crops = categories?.filter((c) => c.kind === 'crop') ?? [];
+  const livestock = categories?.filter((c) => c.kind === 'livestock') ?? [];
+
+  const wantsCrops = selected === 'crop' || selected === 'mixed';
+  const wantsLivestock = selected === 'livestock' || selected === 'mixed';
+
+  const toggle = (list: string[], key: string) =>
+    list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
+
   const submit = async () => {
+    /*
+      Only what the chosen farm type allows. Changing the type after picking
+      categories would otherwise send crops for a livestock farm, which the
+      server refuses — and rightly, but the coordinator never asked for it.
+    */
+    const declaring = [
+      ...(wantsCrops ? chosenCrops : []),
+      ...(wantsLivestock ? chosenLivestock : []),
+    ];
+
+    if (declaring.length === 0) {
+      Alert.alert(
+        'Which ones?',
+        selected === 'crop'
+          ? 'Choose at least one crop this farm grows.'
+          : 'Choose at least one kind of livestock this farm keeps.'
+      );
+      return;
+    }
+
     setLoading(true);
     try {
-      await verificationApi.farmType(appId, selected, unitId);
+      await verificationApi.farmType(appId, selected, declaring, unitId);
       await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
       onNext(selected);
     } catch (err: unknown) {
@@ -238,7 +318,7 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType }: {
 
   return (
     <View>
-      <Text className="text-text-3 text-sm mb-4">Select the primary farm type for this verification.</Text>
+      <Text className="text-text-3 text-sm mb-4">This determines the verification checklist used for this farm.</Text>
       {options.map((opt) => (
         <TouchableOpacity
           key={opt.value}
@@ -255,6 +335,41 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType }: {
           {selected === opt.value && <Text className="text-green-500 text-xl">✓</Text>}
         </TouchableOpacity>
       ))}
+
+      {categoriesLoading && (
+        <Card className="mb-4">
+          <ActivityIndicator color="#0D7A3D" />
+        </Card>
+      )}
+
+      {wantsLivestock && livestock.length > 0 && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Livestock Type</Text>
+          <Text className="text-text-3 text-xs mb-3">
+            Pick every kind this farm keeps. Only these are asked about at the capacity step.
+          </Text>
+          <CategoryChips
+            categories={livestock}
+            selected={chosenLivestock}
+            onToggle={(key) => setChosenLivestock((prev) => toggle(prev, key))}
+          />
+        </Card>
+      )}
+
+      {wantsCrops && crops.length > 0 && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Crop Type</Text>
+          <Text className="text-text-3 text-xs mb-3">
+            Pick every crop this farm grows. Only these are asked about at the capacity step.
+          </Text>
+          <CategoryChips
+            categories={crops}
+            selected={chosenCrops}
+            onToggle={(key) => setChosenCrops((prev) => toggle(prev, key))}
+          />
+        </Card>
+      )}
+
       <Button label={loading ? 'Saving...' : 'Save & Continue'} onPress={submit} loading={loading} fullWidth />
     </View>
   );
@@ -659,68 +774,258 @@ function InfrastructureStep({ appId, unitId, onNext }: { appId: string; unitId?:
 }
 
 // ─── Step: Capacity ───────────────────────────────────────────────────────────
-function CapacityStep({ appId, unitId, onNext, farmType }: { appId: string; unitId?: string; onNext: () => void; farmType: 'crop' | 'livestock' | 'mixed' }) {
+
+/**
+ * One question of a category, drawn as whatever kind of question it is.
+ *
+ * ── EVERY TYPE, NOT ONLY THE TYPED-IN ONES ───────────────────────────────
+ *
+ * This rendered `number` and `text` and dropped the rest on the floor. Five
+ * of the six answers Poultry requires are a select or a boolean — `type`,
+ * `housingType`, `vaccinationStatus`, `feedSource`, `veterinaryAccess` — so
+ * the screen asked for the bird count and the server then refused the step
+ * for the five it had never put on screen. Every livestock category is
+ * built that way, and every crop category requires a `soilQuality` select.
+ *
+ * A boolean is drawn as Yes/No rather than a switch because a switch has no
+ * way to say "not answered", and these are answers about somebody's farm.
+ */
+const YES_NO = ['Yes', 'No'];
+
+function CategoryField({ field, value, onChange }: {
+  field: CategoryFieldDef;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const label = field.label + (field.required ? ' *' : '') + (field.unit ? ` (${field.unit})` : '');
+
+  if (field.type === 'select' || field.type === 'boolean') {
+    const options = field.type === 'boolean' ? YES_NO : (field.options ?? []);
+    const current = field.type === 'boolean'
+      ? (value === 'true' ? 'Yes' : value === 'false' ? 'No' : '')
+      : value;
+
+    return (
+      <View className="mb-3">
+        <Text className="text-xs text-text-2 mb-1.5">{label}</Text>
+        <View className="flex-row flex-wrap" style={{ gap: 6 }}>
+          {options.map((option) => {
+            const chosen = current === option;
+
+            return (
+              <TouchableOpacity
+                key={option}
+                onPress={() => {
+                  /* Tapping the chosen one clears it, so a question answered
+                     by accident can be unanswered. */
+                  const cleared = chosen ? '' : option;
+                  onChange(
+                    field.type === 'boolean' && cleared !== ''
+                      ? String(cleared === 'Yes')
+                      : cleared
+                  );
+                }}
+                className={`px-3 py-2 rounded-lg border ${
+                  chosen ? 'bg-green-50 border-green-500' : 'bg-card border-border'
+                }`}
+              >
+                <Text className={`text-sm ${chosen ? 'text-green-600 font-semibold' : 'text-text-2'}`}>
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <Input
+      label={label}
+      value={value}
+      onChangeText={onChange}
+      keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+      containerStyle={{ marginBottom: 8 }}
+    />
+  );
+}
+
+/**
+ * Declared at module scope on purpose.
+ *
+ * It used to be defined inside CapacityStep, which made it a NEW component
+ * type on every render — React then unmounted and remounted the whole form
+ * on each keystroke, and the field being typed into lost focus after every
+ * single character.
+ */
+function CategoryForm({ category, values, onChange }: {
+  category: FarmTypeCategory;
+  values: Record<string, string>;
+  onChange: (fieldKey: string, next: string) => void;
+}) {
+  return (
+    <View className="mb-4 p-3 bg-bg rounded-xl">
+      <Text className="font-semibold text-text mb-2">
+        {category.icon ? category.icon + ' ' : ''}{category.label}
+      </Text>
+      {category.fieldSchema.map((field) => (
+        <CategoryField
+          key={field.key}
+          field={field}
+          value={values[field.key] ?? ''}
+          onChange={(next) => onChange(field.key, next)}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** What was already recorded, as the strings these controls hold. */
+function entriesToForm(entries: DynamicCategoryEntry[]): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+
+  for (const entry of entries) {
+    out[entry.categoryKey] = Object.fromEntries(
+      Object.entries(entry.fields ?? {}).map(([key, value]) => [
+        key,
+        value === null || value === undefined ? '' : String(value),
+      ])
+    );
+  }
+
+  return out;
+}
+
+function CapacityStep({ appId, unitId, onNext, farmType, declared, recorded, onEditTypes }: {
+  appId: string;
+  unitId?: string;
+  onNext: () => void;
+  farmType: 'crop' | 'livestock' | 'mixed';
+  declared: { crop: string[]; livestock: string[] };
+  recorded: { crop: DynamicCategoryEntry[]; livestock: DynamicCategoryEntry[] };
+  onEditTypes: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [method, setMethod] = useState('farmer_stated');
-  const [cropEntries, setCropEntries] = useState<Record<string, Record<string, string>>>({});
-  const [livestockEntries, setLivestockEntries] = useState<Record<string, Record<string, string>>>({});
+  const [cropEntries, setCropEntries] = useState<Record<string, Record<string, string>>>(
+    () => entriesToForm(recorded.crop)
+  );
+  const [livestockEntries, setLivestockEntries] = useState<Record<string, Record<string, string>>>(
+    () => entriesToForm(recorded.livestock)
+  );
   const qc = useQueryClient();
 
-  const { data: categories } = useQuery({
+  const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['categories'],
     queryFn: () => categoriesApi.list(),
     select: (res) => res.data.data,
   });
 
-  const crops = categories?.filter((c) => c.kind === 'crop') ?? [];
-  const livestock = categories?.filter((c) => c.kind === 'livestock') ?? [];
-
   const showCrops = farmType === 'crop' || farmType === 'mixed';
   const showLivestock = farmType === 'livestock' || farmType === 'mixed';
 
+  /*
+    ONLY WHAT THE FARM WAS SAID TO HAVE.
+
+    This used to render every active category, so a poultry farm was shown
+    six livestock forms — cattle, fish, goats and the rest — each marked
+    required. The types are chosen on the farm type step now, and this asks
+    about those and nothing else.
+  */
+  const crops = (categories ?? []).filter(
+    (c) => c.kind === 'crop' && declared.crop.includes(c.categoryKey)
+  );
+  const livestock = (categories ?? []).filter(
+    (c) => c.kind === 'livestock' && declared.livestock.includes(c.categoryKey)
+  );
+
+  const nothingDeclared =
+    (showCrops ? declared.crop.length : 0) + (showLivestock ? declared.livestock.length : 0) === 0;
+
   const setField = (kind: 'crop' | 'livestock', categoryKey: string, fieldKey: string, value: string) => {
-    if (kind === 'crop') {
-      setCropEntries((prev) => ({ ...prev, [categoryKey]: { ...prev[categoryKey], [fieldKey]: value } }));
-    } else {
-      setLivestockEntries((prev) => ({ ...prev, [categoryKey]: { ...prev[categoryKey], [fieldKey]: value } }));
-    }
+    const update = (prev: Record<string, Record<string, string>>) => ({
+      ...prev,
+      [categoryKey]: { ...prev[categoryKey], [fieldKey]: value },
+    });
+
+    if (kind === 'crop') setCropEntries(update);
+    else setLivestockEntries(update);
   };
 
-  const CategoryForm = ({ category, kind }: { category: FarmTypeCategory; kind: 'crop' | 'livestock' }) => {
-    const entries = kind === 'crop' ? cropEntries : livestockEntries;
-    const vals = entries[category.categoryKey] ?? {};
-    return (
-      <View className="mb-4 p-3 bg-bg rounded-xl">
-        <Text className="font-semibold text-text mb-2">{category.icon} {category.label}</Text>
-        {category.fieldSchema.filter((f) => f.type === 'number' || f.type === 'text').map((field) => (
-          <Input
-            key={field.key}
-            label={field.label + (field.required ? ' *' : '') + (field.unit ? ` (${field.unit})` : '')}
-            value={vals[field.key] ?? ''}
-            onChangeText={(v) => setField(kind, category.categoryKey, field.key, v)}
-            keyboardType={field.type === 'number' ? 'numeric' : 'default'}
-            containerStyle={{ marginBottom: 8 }}
-          />
-        ))}
-      </View>
-    );
+  /**
+   * The answers for one category, typed the way the server stores them.
+   *
+   * An unanswered field is LEFT OUT rather than sent as an empty string.
+   * The old mapping ran every value through `Number()`, and `Number('')` is
+   * 0 — so a question nobody answered arrived as a real zero, and a farm
+   * whose stock was never counted looked like a farm with none.
+   */
+  const valuesFor = (category: FarmTypeCategory, raw: Record<string, string>) => {
+    const fields: Record<string, unknown> = {};
+
+    for (const field of category.fieldSchema) {
+      const value = (raw[field.key] ?? '').trim();
+      if (value === '') continue;
+
+      if (field.type === 'number') {
+        const asNumber = Number(value);
+        if (!Number.isNaN(asNumber)) fields[field.key] = asNumber;
+        continue;
+      }
+
+      if (field.type === 'boolean') {
+        fields[field.key] = value === 'true';
+        continue;
+      }
+
+      fields[field.key] = value;
+    }
+
+    return fields;
   };
 
   const submit = async () => {
+    const chosen = [
+      ...(showCrops ? crops.map((c) => ({ category: c, kind: 'crop' as const })) : []),
+      ...(showLivestock ? livestock.map((c) => ({ category: c, kind: 'livestock' as const })) : []),
+    ];
+
+    /* Named before it is sent, so a refusal names the box and not the key. */
+    const missing: string[] = [];
+
+    for (const { category, kind } of chosen) {
+      const raw = (kind === 'crop' ? cropEntries : livestockEntries)[category.categoryKey] ?? {};
+
+      for (const field of category.fieldSchema) {
+        if (field.required && (raw[field.key] ?? '').trim() === '') {
+          missing.push(`${category.label}: ${field.label}`);
+        }
+      }
+    }
+
+    if (missing.length > 0) {
+      Alert.alert('Still needed', missing.join('\n'));
+      return;
+    }
+
     setLoading(true);
     try {
-      const crops_payload = Object.entries(cropEntries).map(([categoryKey, fields]) => ({
-        categoryKey,
-        fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, isNaN(Number(v)) ? v : Number(v)])),
-      }));
-      const livestock_payload = Object.entries(livestockEntries).map(([categoryKey, fields]) => ({
-        categoryKey,
-        fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, isNaN(Number(v)) ? v : Number(v)])),
-      }));
+      const payload = (kind: 'crop' | 'livestock') =>
+        chosen
+          .filter((c) => c.kind === kind)
+          .map(({ category }) => ({
+            categoryKey: category.categoryKey,
+            fields: valuesFor(
+              category,
+              (kind === 'crop' ? cropEntries : livestockEntries)[category.categoryKey] ?? {}
+            ),
+          }));
+
       await verificationApi.capacity(appId, {
         measurementMethod: method,
-        crops: showCrops ? crops_payload : [],
-        livestock: showLivestock ? livestock_payload : [],
+        crops: showCrops ? payload('crop') : [],
+        livestock: showLivestock ? payload('livestock') : [],
       }, unitId);
       await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
       onNext();
@@ -745,21 +1050,58 @@ function CapacityStep({ appId, unitId, onNext, farmType }: { appId: string; unit
         ))}
       </Card>
 
-      {showCrops && crops.length > 0 && (
+      {categoriesLoading && (
         <Card className="mb-4">
-          <Text className="font-bold text-text mb-3">Crop Capacity</Text>
-          {crops.map((c) => <CategoryForm key={c._id} category={c} kind="crop" />)}
+          <ActivityIndicator color="#0D7A3D" />
+        </Card>
+      )}
+
+      {!categoriesLoading && nothingDeclared && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Nothing to measure yet</Text>
+          <Text className="text-text-3 text-sm mb-3">
+            This farm has no crop or livestock type recorded, so there is nothing to ask about.
+            Set what it keeps on the Farm Type step and come back.
+          </Text>
+          <Button label="Go to Farm Type" onPress={onEditTypes} variant="secondary" fullWidth />
         </Card>
       )}
 
       {showLivestock && livestock.length > 0 && (
         <Card className="mb-4">
           <Text className="font-bold text-text mb-3">Livestock Capacity</Text>
-          {livestock.map((c) => <CategoryForm key={c._id} category={c} kind="livestock" />)}
+          {livestock.map((c) => (
+            <CategoryForm
+              key={c._id}
+              category={c}
+              values={livestockEntries[c.categoryKey] ?? {}}
+              onChange={(fieldKey, next) => setField('livestock', c.categoryKey, fieldKey, next)}
+            />
+          ))}
         </Card>
       )}
 
-      <Button label={loading ? 'Saving...' : 'Save & Continue'} onPress={submit} loading={loading} fullWidth />
+      {showCrops && crops.length > 0 && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-3">Crop Capacity</Text>
+          {crops.map((c) => (
+            <CategoryForm
+              key={c._id}
+              category={c}
+              values={cropEntries[c.categoryKey] ?? {}}
+              onChange={(fieldKey, next) => setField('crop', c.categoryKey, fieldKey, next)}
+            />
+          ))}
+        </Card>
+      )}
+
+      <Button
+        label={loading ? 'Saving...' : 'Save & Continue'}
+        onPress={submit}
+        loading={loading}
+        disabled={nothingDeclared}
+        fullWidth
+      />
     </View>
   );
 }
@@ -939,6 +1281,13 @@ export default function VerificationWizard() {
 
   const completedSteps = profile?.verification?.completedSteps ?? [];
   const farmType = (profile?.verification?.farmTypeSelected ?? 'crop') as 'crop' | 'livestock' | 'mixed';
+  /* Which crops and which livestock, chosen at the farm type step. The
+     capacity step asks about these and nothing else. */
+  const declared = profile?.verification?.farmTypeCategories ?? { crop: [], livestock: [] };
+  const recorded = {
+    crop: profile?.verification?.capacity?.crops ?? [],
+    livestock: profile?.verification?.capacity?.livestock ?? [],
+  };
   const overallStatus = profile?.verification?.overallStatus;
 
   // Determine which step to show first: the first incomplete step
@@ -1065,7 +1414,13 @@ export default function VerificationWizard() {
           <IdentityStep appId={appId} unitId={unitId} onNext={goToNext} completedSteps={completedSteps} />
         )}
         {activeStep === 'farmType' && (
-          <FarmTypeStep appId={appId} unitId={unitId} onNext={(type) => { goToNext(); }} currentFarmType={profile.verification?.farmTypeSelected ?? null} />
+          <FarmTypeStep
+            appId={appId}
+            unitId={unitId}
+            onNext={() => { goToNext(); }}
+            currentFarmType={profile.verification?.farmTypeSelected ?? null}
+            declared={declared}
+          />
         )}
         {activeStep === 'gps' && (
           <GPSStep appId={appId} unitId={unitId} onNext={goToNext} />
@@ -1077,7 +1432,15 @@ export default function VerificationWizard() {
           <InfrastructureStep appId={appId} unitId={unitId} onNext={goToNext} />
         )}
         {activeStep === 'capacity' && (
-          <CapacityStep appId={appId} unitId={unitId} onNext={goToNext} farmType={farmType} />
+          <CapacityStep
+            appId={appId}
+            unitId={unitId}
+            onNext={goToNext}
+            farmType={farmType}
+            declared={declared}
+            recorded={recorded}
+            onEditTypes={() => setActiveStep('farmType')}
+          />
         )}
         {activeStep === 'evidence' && (
           <EvidenceStep appId={appId} unitId={unitId} onNext={goToNext} farmType={farmType} />

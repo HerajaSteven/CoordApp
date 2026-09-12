@@ -100,8 +100,10 @@ export const verificationApi = {
     mismatchReason?: string;
     mismatchNotes?: string;
   }, unitId?: string) => api.post(`/verifications/${appId}/identity`, body, { params: { unitId } }),
-  farmType: (appId: string, farmType: 'crop' | 'livestock' | 'mixed', unitId?: string) =>
-    api.post(`/verifications/${appId}/farm-type`, { farmType }, { params: { unitId } }),
+  /* `categories` is WHICH crops and which livestock — "livestock farm" does
+     not say whether to ask about birds or about catfish. */
+  farmType: (appId: string, farmType: 'crop' | 'livestock' | 'mixed', categories: string[], unitId?: string) =>
+    api.post(`/verifications/${appId}/farm-type`, { farmType, categories }, { params: { unitId } }),
   gps: (appId: string, body: { centerLat: number; centerLng: number; accuracyMeters: number }, unitId?: string) =>
     api.put(`/verifications/${appId}/gps`, body, { params: { unitId } }),
   landOwnership: (appId: string, body: {
