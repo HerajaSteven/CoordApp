@@ -40,6 +40,13 @@ export interface FarmRegistration {
   status: string;
   paymentStatus: 'pending' | 'paid' | 'failed' | string;
   organizationSlug: string;
+  /**
+   * Where the farm is, or null if nobody has walked it yet.
+   *
+   * Carried on the LIST so the map and the caseload can be ordered by
+   * which is nearest. Never derived from the farmer's address.
+   */
+  coordinates: { lat: number; lng: number } | null;
   createdAt: string;
 }
 
