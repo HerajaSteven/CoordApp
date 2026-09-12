@@ -1,14 +1,13 @@
 import React from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   ActivityIndicator,
-  TextInput,
   type TextInputProps,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
+import { Text, TextInput } from './typography';
 import { useRouter } from 'expo-router';
 
 // ─── Button ───────────────────────────────────────────────────────────────────

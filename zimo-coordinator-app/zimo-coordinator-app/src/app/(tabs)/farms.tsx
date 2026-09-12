@@ -1,11 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import { Text, TextInput } from '@/components/ui/typography';
 import { FlatList } from 'react-native';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

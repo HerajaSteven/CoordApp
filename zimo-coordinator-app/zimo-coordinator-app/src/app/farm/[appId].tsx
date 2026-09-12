@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
   Alert,
 } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { farmsApi } from '@/services/api';
+import { useAuthStore } from '@/store/auth.store';
 import {
   Card,
   StatusBadge,
@@ -22,6 +23,7 @@ import {
   Badge,
   HeaderBackButton,
 } from '@/components/ui';
+import { EvidenceGallery } from '@/components/EvidenceGallery';
 import type { TimelineEvent } from '@/types';
 
 function StepRow({ step, completed }: { step: string; completed: boolean }) {
@@ -83,6 +85,9 @@ export default function FarmDetailScreen() {
   const { appId } = useLocalSearchParams<{ appId: string }>();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'overview' | 'verification' | 'timeline'>('overview');
+
+  /* Who is looking, so the screen can say "You" rather than an id. */
+  const myCoordinatorId = useAuthStore((s) => s.coordinator?.coordinatorId ?? null);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['farm-profile', appId],
@@ -326,6 +331,59 @@ export default function FarmDetailScreen() {
                 <InfoRow label="Active Dispute" value={ver.landOwnership.activeDispute ? 'Yes ⚠️' : 'No'} />
               </Card>
             )}
+
+            {/*
+              ── WHO DID THIS, AND WHEN ────────────────────────────────
+
+              A coordinator arriving at a farm another coordinator has
+              already been to could see that a step was complete and
+              nothing about who completed it. Sent to re-verify, they had
+              no way to tell their own earlier visit from somebody
+              else's — and no way to question a sign-off that never
+              happened.
+            */}
+            <Card className="mb-4">
+              <Text className="font-bold text-text mb-2">Who verified this</Text>
+              <Divider className="mb-2" />
+              {/*
+                "You" where it was this coordinator's own work — the
+                question they are actually asking when they open a farm
+                that is already verified. Falls back to the name, then to
+                the bare id, then to saying nobody is assigned: each rung
+                down is less useful and none of them is a blank.
+              */}
+              <InfoRow
+                label="Coordinator"
+                value={
+                  computed.assignedCoordinator && computed.assignedCoordinator === myCoordinatorId
+                    ? 'You'
+                    : computed.assignedCoordinatorName
+                      ?? computed.assignedCoordinator
+                      ?? 'Not assigned'
+                }
+              />
+              <InfoRow
+                label="Submitted"
+                value={ver?.submittedAt ? new Date(ver.submittedAt).toLocaleString() : 'Not submitted'}
+              />
+              <InfoRow
+                label="Approved"
+                value={ver?.approvedAt ? new Date(ver.approvedAt).toLocaleString() : 'Not approved'}
+              />
+              {data.boundary?.verifiedAt && (
+                <InfoRow
+                  label="Boundary walked"
+                  value={new Date(data.boundary.verifiedAt).toLocaleString()}
+                />
+              )}
+              <InfoRow label="Last visit" value={computed.lastVisit ? new Date(computed.lastVisit).toLocaleString() : 'No visit recorded'} />
+            </Card>
+
+            {/*
+              The captures themselves. The platform has always sent these
+              and no screen ever showed them — see EvidenceGallery.
+            */}
+            <EvidenceGallery photos={data.photos ?? []} documents={data.documents ?? []} />
 
             <TouchableOpacity
               onPress={() => {

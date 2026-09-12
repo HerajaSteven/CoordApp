@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   Alert,
   RefreshControl,
   Modal,
 } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';

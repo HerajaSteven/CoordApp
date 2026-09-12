@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { incidentsApi } from '@/services/api';

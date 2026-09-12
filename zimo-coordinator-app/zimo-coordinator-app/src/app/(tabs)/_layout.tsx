@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { View, Text } from 'react-native';
+import { View } from 'react-native';
+import { Text, scaled } from '@/components/ui/typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth.store';
 import { Redirect } from 'expo-router';
@@ -26,7 +27,22 @@ export default function TabsLayout() {
 
   // Tab bar must clear the system gesture/home indicator on every device
   const tabBarPaddingBottom = Math.max(8, insets.bottom);
-  const tabBarHeight = 56 + tabBarPaddingBottom;
+
+  /*
+    ── AND HOLD ITS CONTENT WHEN THE TYPE GROWS ──────────────────────────
+
+    This was a flat 56. The bar's contents are an emoji and a label —
+    both TEXT, both obeying the device's font-scale setting — inside a box
+    that did not. Raise "Display size" on an Android phone and the icons
+    grow into a bar that has not, so they clip and the labels wrap.
+
+    The prototype never meets this: its nav items are `min-height:52px`
+    around their content, and the bar takes whatever height that needs.
+    `scaled()` is how a container that must state a height reaches the
+    same place — it grows by exactly what the text grew by, and no further
+    than the cap in typography.tsx.
+  */
+  const tabBarHeight = scaled(56) + tabBarPaddingBottom;
 
   return (
     <Tabs

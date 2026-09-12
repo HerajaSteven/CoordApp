@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   FlatList,
   RefreshControl,
 } from 'react-native';
+import { Text, TextInput } from '@/components/ui/typography';
 import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';

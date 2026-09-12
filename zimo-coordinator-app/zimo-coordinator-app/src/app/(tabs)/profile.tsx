@@ -1,11 +1,13 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth.store';
 import { useOfflineStore } from '@/store/offline.store';
 import { useSettingsStore } from '@/store/settings.store';
 import { Card, InfoRow, Divider, Button } from '@/components/ui';
+import { HerajaMark } from '@/components/ui/HerajaMark';
 
 function SettingRow({ icon, label, onPress, danger = false, right }: {
   icon: string;
@@ -150,8 +152,12 @@ export default function ProfileScreen() {
           onPress={handleLogout}
           variant="danger"
           fullWidth
-          style={{ marginBottom: 40 }}
         />
+
+        {/* The platform this runs on, where somebody goes looking for it. */}
+        <View className="mt-8 mb-10">
+          <HerajaMark width={78} caption="Powered by Heraja" />
+        </View>
       </View>
     </ScrollView>
   );

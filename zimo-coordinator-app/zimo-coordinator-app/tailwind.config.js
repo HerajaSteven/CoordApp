@@ -4,6 +4,22 @@ module.exports = {
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
+      /*
+        Poppins, in the four weights the screens actually use.
+
+        Named rather than set as a bare default because NativeWind maps a
+        weight class like `font-semibold` to fontWeight, and a custom font
+        on Android does NOT synthesise weights — it renders the one face
+        it was given. So each weight is its own loaded face and its own
+        family name, which is why `font-semibold` alone would silently
+        keep showing Regular.
+      */
+      fontFamily: {
+        sans: ['Poppins_400Regular'],
+        medium: ['Poppins_500Medium'],
+        semibold: ['Poppins_600SemiBold'],
+        bold: ['Poppins_700Bold'],
+      },
       colors: {
         green: {
           DEFAULT: "#0D7A3D",

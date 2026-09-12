@@ -5,8 +5,10 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "android": {
       "package": "com.zimoclan.coordinator",
+      "_adaptiveIcon": "The three android-icon-*.png files in assets/ are Expo's template defaults — a blue chevron, not this product. Pointing the launcher at them would ship somebody else's mark. Until a foreground is drawn with the adaptive safe zone in mind (Android masks the outer third, which would cut the wordmark off this artwork), Android falls back to `icon` above, which is the real one.",
       "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.INTERNET",
@@ -49,7 +51,17 @@
           "cameraPermission": "Allow Zimo Coordinator to access your camera to capture farm evidence photos."
         }
       ],
-      "@sentry/react-native/expo"
+      "@sentry/react-native/expo",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0D7A3D"
+        }
+      ]
     ],
     "scheme": "zimo-coordinator",
     "experiments": {

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import * as Network from 'expo-network';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOfflineStore } from '@/store/offline.store';

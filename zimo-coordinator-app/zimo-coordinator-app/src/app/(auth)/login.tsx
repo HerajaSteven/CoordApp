@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Alert,
 } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '@/store/auth.store';
 import { Button, Input } from '@/components/ui';
+import { HerajaMark } from '@/components/ui/HerajaMark';
 import { getErrorMessage, getLoginErrorMessage } from '@/utils/errors';
 
 const schema = z.object({
@@ -124,6 +125,16 @@ export default function LoginScreen() {
             Zimo Clan Field Verification System v1.0{'\n'}
             Contact your supervisor if you need access.
           </Text>
+
+          {/*
+            Whose system this is. A coordinator signing in on a phone
+            handed to them at a cooperative office is about to photograph
+            somebody's identity document — they are owed the name of the
+            platform that will hold it.
+          */}
+          <View className="mt-6">
+            <HerajaMark caption="Powered by Heraja" />
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

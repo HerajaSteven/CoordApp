@@ -147,6 +147,10 @@ export interface FarmProfile {
     profileCompletion: number;
     lastVisit: string | null;
     assignedCoordinator: string | null;
+    /** Resolved by the platform. The app has no route to look a coordinator
+        up by id — `/coordinators/me` is the only one — and adding one would
+        publish the whole roster to answer a question about one farm. */
+    assignedCoordinatorName: string | null;
     assignmentStatus: string;
     riskLevel: 'low' | 'medium' | 'high' | null;
     totalSites: number;

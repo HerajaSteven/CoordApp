@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   Alert,
@@ -9,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clustersApi, uploadsApi } from '@/services/api';

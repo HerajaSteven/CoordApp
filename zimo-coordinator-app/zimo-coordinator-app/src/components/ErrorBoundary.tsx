@@ -1,5 +1,6 @@
 import React, { Component, ReactNode } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, TouchableOpacity } from 'react-native';
+import { Text } from '@/components/ui/typography';
 import { Sentry } from '@/config/sentry';
 
 interface Props {
