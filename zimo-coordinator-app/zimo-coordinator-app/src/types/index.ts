@@ -446,3 +446,32 @@ export interface MapConfig {
   tileUrl: string;
   attribution: string;
 }
+
+// ─── Harvest ──────────────────────────────────────────────────────────────────
+/**
+ * A farm with something ready to collect.
+ *
+ * The platform decides what is offered: a cohort already emptied would
+ * produce a confirmation it then refuses, and a farm nobody enrolled
+ * invites a collection nobody arranged.
+ */
+export interface CollectableBatch {
+  id: string;
+  category: string;
+  breed: string | null;
+  remaining_quantity: number;
+  placed_at: string | null;
+}
+
+export interface CollectableFarm {
+  farm_profile_id: string;
+  farm_name: string;
+  farm_identity_id: string;
+  batches: CollectableBatch[];
+}
+
+/** What a collection has to clear before the platform will settle it. */
+export interface HarvestThresholds {
+  min_headcount_by_category: Record<string, number> | [];
+  min_avg_weight_kg_by_category: Record<string, number> | [];
+}

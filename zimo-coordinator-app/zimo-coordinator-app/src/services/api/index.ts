@@ -4,11 +4,13 @@ import type {
   AuthTokens,
   ClusterFarm,
   ClusterListResponse,
+  CollectableFarm,
   Coordinator,
   FarmProfile,
   FarmRegistration,
   FarmTypeCategory,
   FarmVisit,
+  HarvestThresholds,
   Incident,
   LoginInput,
   MapConfig,
@@ -89,6 +91,26 @@ export const farmsApi = {
 export const categoriesApi = {
   list: (kind?: 'crop' | 'livestock') =>
     api.get<ApiResponse<FarmTypeCategory[]>>('/categories', { params: { kind, status: 'active' } }),
+};
+
+// ─── Harvest ──────────────────────────────────────────────────────────────────
+/*
+  Collection is the platform’s, carried under this agent’s own name — the
+  service names them, so a pickup is recorded against whoever stood on the
+  farm rather than against the backend that carried it.
+*/
+export const harvestApi = {
+  collectableFarms: () => api.get<ApiResponse<CollectableFarm[]>>('/harvest/collectable-farms'),
+  thresholds: () => api.get<ApiResponse<HarvestThresholds>>('/harvest/thresholds'),
+  collections: () => api.get<ApiResponse<unknown[]>>('/harvest/collections'),
+  confirm: (body: {
+    livestock_batch_id: string;
+    farm_identity_id: string;
+    category: string;
+    headcount_collected: number;
+    avg_weight_kg: string;
+    region?: string;
+  }) => api.post('/harvest/collections', body),
 };
 
 // ─── Map ──────────────────────────────────────────────────────────────────────

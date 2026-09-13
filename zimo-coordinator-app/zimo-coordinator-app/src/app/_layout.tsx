@@ -53,6 +53,10 @@ function AppContent() {
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
+          name="harvest"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
           name="farm/[appId]"
           options={{ animation: 'slide_from_right' }}
         />

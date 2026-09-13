@@ -31,10 +31,11 @@ import type { FarmRegistration } from '@/types';
 
   A tile that opens nothing teaches people not to trust the grid. The
   prototype has eight; these are the ones this app can actually carry out
-  today. Harvest pickup and market pickup are real on the platform and
-  deliberately absent until a field agent's identity can reach them —
-  recording a collection against the wrong person is worse than not
-  offering the button.
+  today. Harvest pickup is here now that the verification service names the
+  agent it acts for, so a collection is recorded against whoever stood on
+  the farm. Market pickup is still absent until the same is true for it —
+  recording a dispatch against the wrong person is worse than not offering
+  the button.
 */
 
 function StatPill({ label, value, colour = '#FFFFFF' }: {
@@ -203,6 +204,12 @@ export default function DashboardScreen() {
               tone="red"
               onPress={go('/(tabs)/farms')}
             />
+          </View>
+          <View className="flex-row" style={{ gap: 10 }}>
+            <QuickAction icon="📦" label="Harvest Pickup" tone="green" onPress={go('/harvest')} />
+            {/* Keeps the row's width: a lone tile stretching across two
+                columns reads as a different kind of button. */}
+            <View className="flex-1" />
           </View>
         </View>
 
