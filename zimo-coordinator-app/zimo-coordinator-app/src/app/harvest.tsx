@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadCapturedFile } from '@/features/camera/platformFile';
+import { View, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { Text } from '@/components/ui/typography';
 import { Stack } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -70,6 +72,51 @@ export default function HarvestPickupScreen() {
   const [headcount, setHeadcount] = useState('');
   const [avgWeight, setAvgWeight] = useState('');
   const [saving, setSaving] = useState(false);
+  /*
+    ── WHAT THE PAYMENT NOW WAITS ON ─────────────────────────────────────
+
+    A pickup used to be paid the moment it was confirmed here, on this
+    screen's numbers alone. Now the farmer and, when a driver takes it,
+    logistics each record the weight with photos, and the farmer and driver
+    are paid only when those weights agree with the coordinator's. So this
+    screen asks for photos of the weighing, and for the driver.
+  */
+  const [driverId, setDriverId] = useState<number | null>(null);
+  const [photos, setPhotos] = useState<Array<{ uri: string; fileId: string | null }>>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const driversQuery = useQuery({
+    queryKey: ['harvest', 'drivers'],
+    queryFn: () => harvestApi.drivers(),
+    select: (res) => res.data.data,
+  });
+
+  const addWeighingPhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Camera', 'Camera access is needed to photograph the weighing.');
+      return;
+    }
+    const shot = await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 0.75, exif: false });
+    if (shot.canceled || !shot.assets[0]) return;
+
+    const uri = shot.assets[0].uri;
+    setPhotos((prev) => [...prev, { uri, fileId: null }]);
+    setUploadingPhoto(true);
+    try {
+      const fileId = await uploadCapturedFile({ localUri: uri, filename: `${Date.now()}-weighing.jpg`, mimeType: 'image/jpeg' });
+      setPhotos((prev) => prev.map((p) => (p.uri === uri ? { ...p, fileId } : p)));
+    } catch (err: unknown) {
+      setPhotos((prev) => prev.filter((p) => p.uri !== uri));
+      Alert.alert(
+        'Photo not uploaded',
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ??
+          'The photo could not be uploaded. Check your connection and take it again.'
+      );
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const farmsQuery = useQuery({
     queryKey: ['harvest', 'collectable-farms'],
@@ -122,6 +169,16 @@ export default function HarvestPickupScreen() {
       return;
     }
 
+    const evidence = photos.map((p) => p.fileId).filter((id): id is string => id !== null);
+    if (evidence.length === 0) {
+      Alert.alert('Photo of the weighing', 'Take at least one photo of the harvest being weighed, showing the scale.');
+      return;
+    }
+    if (uploadingPhoto) {
+      Alert.alert('Still uploading', 'Wait for the photo to finish uploading.');
+      return;
+    }
+
     /*
       Asked for, not queued. This settles money, and a replay against an
       emptied cohort pays for animals nobody collected.
@@ -130,7 +187,7 @@ export default function HarvestPickupScreen() {
     if (!network.isConnected) {
       Alert.alert(
         'No connection',
-        'A pickup is settled the moment it is confirmed, so it cannot be saved for later. Find signal and confirm it then.'
+        'A pickup is recorded against the cohort the moment it is confirmed, so it cannot be saved for later. Find signal and confirm it then.'
       );
       return;
     }
@@ -149,18 +206,26 @@ export default function HarvestPickupScreen() {
           category: batch.category,
           headcount_collected: count,
           avg_weight_kg: weight,
+          driver_id: driverId ?? undefined,
+          evidence_file_ids: evidence,
         });
 
         await qc.invalidateQueries({ queryKey: ['harvest'] });
 
-        Alert.alert('Recorded', 'The pickup has been confirmed and sent for settlement.', [
-          { text: 'OK' },
-        ]);
+        Alert.alert(
+          'Recorded',
+          driverId
+            ? 'The pickup is recorded. The farmer and driver are paid once their weights match yours.'
+            : 'The pickup is recorded. The farmer is paid once their weight matches yours.',
+          [{ text: 'OK' }]
+        );
 
         setFarm(null);
         setBatch(null);
         setHeadcount('');
         setAvgWeight('');
+        setDriverId(null);
+        setPhotos([]);
       } catch (err: unknown) {
         Alert.alert(
           'Not recorded',
@@ -270,8 +335,8 @@ export default function HarvestPickupScreen() {
           <Card className="mb-4">
             <Text className="font-bold text-text mb-1">What was collected</Text>
             <Text className="text-text-3 text-xs mb-3">
-              The platform settles this from the count and the weight. Nothing on this screen
-              decides what anybody is paid.
+              The farmer and driver are paid only when their own weights match this one. Nothing
+              on this screen decides what anybody is paid.
             </Text>
 
             <Input
@@ -289,6 +354,48 @@ export default function HarvestPickupScreen() {
               keyboardType="numeric"
               placeholder="2.4"
             />
+
+            <Text className="font-semibold text-text mt-2 mb-2">Photos of the weighing</Text>
+            <View className="flex-row flex-wrap gap-2 mb-2">
+              {photos.map((photo) => (
+                <View key={photo.uri} className="w-20 h-20 rounded-lg overflow-hidden border border-border">
+                  <Image source={{ uri: photo.uri }} style={{ width: '100%', height: '100%' }} />
+                  {photo.fileId === null && (
+                    <View className="absolute inset-0 items-center justify-center bg-black/40">
+                      <Text className="text-white text-[10px]">Uploading</Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+            <Button
+              label={photos.length === 0 ? 'Photograph the Scale' : 'Add Another Photo'}
+              onPress={addWeighingPhoto}
+              variant="secondary"
+              loading={uploadingPhoto}
+              fullWidth
+            />
+
+            <Text className="font-semibold text-text mt-4 mb-1">Driver collecting</Text>
+            <Text className="text-text-3 text-xs mb-2">
+              The driver records the weight at pickup too, and is paid when it matches.
+            </Text>
+            {(driversQuery.data ?? []).length === 0 ? (
+              <Text className="text-text-3 text-xs mb-2">
+                {driversQuery.isError ? 'Could not load drivers.' : 'No drivers are registered, so this pickup has no logistics weight.'}
+              </Text>
+            ) : (
+              <View className="flex-row flex-wrap gap-2 mb-2">
+                <TouchableOpacity onPress={() => setDriverId(null)} className={`px-3 py-2 rounded-full border ${driverId === null ? 'bg-green-500 border-green-500' : 'border-border'}`}>
+                  <Text className={driverId === null ? 'text-white text-xs' : 'text-text text-xs'}>No driver</Text>
+                </TouchableOpacity>
+                {(driversQuery.data ?? []).map((d) => (
+                  <TouchableOpacity key={d.id} onPress={() => setDriverId(d.id)} className={`px-3 py-2 rounded-full border ${driverId === d.id ? 'bg-green-500 border-green-500' : 'border-border'}`}>
+                    <Text className={driverId === d.id ? 'text-white text-xs' : 'text-text text-xs'}>{d.fullName}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             {thresholdsQuery.data &&
               ruleFor(batch.category).headcount === undefined &&

@@ -108,6 +108,7 @@ export const harvestApi = {
   collectableFarms: () => api.get<ApiResponse<CollectableFarm[]>>('/harvest/collectable-farms'),
   thresholds: () => api.get<ApiResponse<HarvestThresholds>>('/harvest/thresholds'),
   collections: () => api.get<ApiResponse<unknown[]>>('/harvest/collections'),
+  drivers: () => api.get<ApiResponse<Array<{ id: number; fullName: string; phone: string | null }>>>('/harvest/drivers'),
   confirm: (body: {
     livestock_batch_id: string;
     farm_identity_id: string;
@@ -115,6 +116,9 @@ export const harvestApi = {
     headcount_collected: number;
     avg_weight_kg: string;
     region?: string;
+    driver_id?: number;
+    /** Photos of the weighing, from uploadCapturedFile(). At least one. */
+    evidence_file_ids: string[];
   }) => api.post('/harvest/collections', body),
 };
 
