@@ -3,6 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { Alert } from 'react-native';
 import { uploadsApi } from '@/services/api';
+import { uploadCapturedFile } from './platformFile';
 
 export interface CapturedPhoto {
   localUri: string;
@@ -10,6 +11,8 @@ export interface CapturedPhoto {
   mimeType: string;
   sizeBytes: number;
   remoteUrl?: string;
+  /** Set once the photo is stored on the platform. */
+  fileId?: string;
   slotKey?: string;
 }
 
@@ -102,64 +105,29 @@ export function useCamera(appId: string) {
   ): Promise<string | null> => {
     setUploading(true);
     try {
-      // Step 1: Get Cloudinary signed upload params from our backend
-      const { data: presignData } = await uploadsApi.presign(photo.filename, photo.mimeType);
-      const { uploadUrl, fileUrl, signature, apiKey, timestamp, folder, publicId } = presignData.data;
+      /* Stored through the field service, in this coordinator's name. See platformFile.ts. */
+      const fileId = await uploadCapturedFile(photo);
 
-      // Step 2: Build multipart form and POST directly to Cloudinary
-      // Cloudinary expects multipart/form-data, not a raw PUT body like S3
-      const formData = new FormData();
-      formData.append('file', {
-        uri: photo.localUri,
-        type: photo.mimeType,
-        name: photo.filename,
-      } as unknown as Blob);
-      formData.append('api_key', apiKey);
-      formData.append('timestamp', String(timestamp));
-      formData.append('signature', signature);
-      formData.append('folder', folder);
-      formData.append('public_id', publicId);
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Cloudinary upload failed: ${errorText}`);
-      }
-
-      const cloudinaryResult = await uploadResponse.json() as { secure_url: string };
-      const confirmedUrl = cloudinaryResult.secure_url;
-
-      // Step 3: Confirm the upload with our backend (saves metadata to MongoDB)
       await uploadsApi.confirmPhoto(appId, {
         relatedTo,
         slotKey: photo.slotKey ?? undefined,
-        filename: photo.filename,
-        url: confirmedUrl,
-        mimeType: photo.mimeType,
-        sizeBytes: photo.sizeBytes,
+        fileId,
         capturedAt: new Date().toISOString(),
         gpsTagLat: gpsLat,
         gpsTagLng: gpsLng,
       });
 
-      // Update local state with remote URL
       setPhotos((prev) =>
-        prev.map((p) =>
-          p.localUri === photo.localUri ? { ...p, remoteUrl: confirmedUrl } : p
-        )
+        prev.map((p) => (p.localUri === photo.localUri ? { ...p, fileId } : p))
       );
 
-      return confirmedUrl;
+      return fileId;
     } catch (err) {
       console.error('Upload error:', err);
-      Alert.alert(
-        'Upload Failed',
-        'Photo could not be uploaded. Please check your connection and try again.'
-      );
+      const message =
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ??
+        'Photo could not be uploaded. Please check your connection and try again.';
+      Alert.alert('Upload Failed', message);
       return null;
     } finally {
       setUploading(false);

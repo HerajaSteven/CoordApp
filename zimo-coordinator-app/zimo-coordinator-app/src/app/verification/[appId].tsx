@@ -32,6 +32,7 @@ import {
   HeaderBackButton,
 } from '@/components/ui';
 import type { CategoryFieldDef, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
+import { useStoredFileSource } from '@/features/camera/platformFile';
 import * as Network from 'expo-network';
 
 const STEPS = ['identity', 'farmType', 'gps', 'landOwnership', 'infrastructure', 'capacity', 'evidence', 'review'] as const;
@@ -70,7 +71,7 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
   const [mismatch, setMismatch] = useState(false);
   const [mismatchReason, setMismatchReason] = useState('');
   const [loading, setLoading] = useState(false);
-  const { takePhoto, pickFromGallery, photos } = useCamera(appId);
+  const { takePhoto, pickFromGallery, photos, uploadPhoto } = useCamera(appId);
   const coordinator = useAuthStore((s) => s.coordinator);
   const superAdminGalleryEvidenceEnabled = useSettingsStore((s) => s.superAdminGalleryEvidenceEnabled);
   const shouldUseGallery = coordinator?.role === 'SuperAdmin' && superAdminGalleryEvidenceEnabled;
@@ -87,6 +88,22 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
     }
     setLoading(true);
     try {
+      /*
+        The farmer's selfie and ID photo were taken on this screen and never
+        sent anywhere, so the step was saved with nothing a reviewer could
+        check the identity against. They are stored first now. A photo that
+        fails to upload stops the step, rather than saving it without one.
+      */
+      for (const capture of [selfie, idDoc]) {
+        if (capture && !capture.fileId) {
+          const stored = await uploadPhoto(capture, 'identity');
+          if (!stored) {
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       await verificationApi.identity(appId, {
         confirmed: confirmed && !mismatch,
         confidence: 96,
@@ -1106,6 +1123,13 @@ function CapacityStep({ appId, unitId, onNext, farmType, declared, recorded, onE
   );
 }
 
+/** A photo already stored on the platform, shown with this coordinator's sign-in. */
+function StoredPhoto({ fileId, appId }: { fileId?: string; appId: string }) {
+  const source = useStoredFileSource(fileId, appId);
+  if (!source) return <Text className="text-xs text-text-3">Saved photo</Text>;
+  return <Image source={source} className="w-full h-full" resizeMode="cover" />;
+}
+
 // ─── Step: Evidence ───────────────────────────────────────────────────────────
 function EvidenceStep({ appId, unitId, onNext, farmType }: {
   appId: string;
@@ -1141,8 +1165,10 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
     (s) => s.allTypes || (s.types ?? []).includes(farmType)
   );
   const requiredCount = requiredSlots.length;
-  const completedSlots = requiredSlots.filter((s) => photos.find((p) => p.slotKey === s.key) || earlier(s.key));
+  const completedSlots = requiredSlots.filter((s) => photos.find((p) => p.slotKey === s.key && p.fileId) || earlier(s.key));
   const completedCount = completedSlots.length;
+
+  const isUploadingSlot = (slotKey: string) => uploading === slotKey;
 
   const handleCapture = async (slotKey: string) => {
     const photo = shouldUseGallery ? await pickFromGallery(slotKey) : await takePhoto(slotKey);
@@ -1191,7 +1217,8 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
             <View key={slot.key} className="mb-3">
               <View className="flex-row items-center justify-between mb-1.5">
                 <Text className="text-sm font-medium text-text">{slot.label}</Text>
-                {photo && <Badge label="Captured" variant="green" />}
+                {photo && photo.fileId && <Badge label="Captured" variant="green" />}
+                {photo && !photo.fileId && !isUploadingSlot(slot.key) && <Badge label="Not uploaded, tap to retry" variant="yellow" />}
                 {!photo && saved && <Badge label="Captured earlier" variant="green" />}
               </View>
               <TouchableOpacity
@@ -1203,7 +1230,7 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
                 ) : photo ? (
                   <Image source={{ uri: photo.localUri }} className="w-full h-full" resizeMode="cover" />
                 ) : saved ? (
-                  <Image source={{ uri: saved.url }} className="w-full h-full" resizeMode="cover" />
+                  <StoredPhoto fileId={saved.fileId} appId={appId} />
                 ) : (
                   <View className="items-center">
                     <Text className="text-2xl">📷</Text>

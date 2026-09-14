@@ -3,6 +3,24 @@ import { View, Image, TouchableOpacity, Modal, ScrollView, Linking } from 'react
 import { Text } from '@/components/ui/typography';
 import { Card, Divider } from '@/components/ui';
 import type { UploadedPhoto, UploadedDocument } from '@/types';
+import { useStoredFileSource } from '@/features/camera/platformFile';
+
+/*
+  A stored photo needs this coordinator's sign-in to load. Given its plain
+  address, <Image> was refused and drew an empty grey square.
+*/
+function GalleryImage({ photo, style, resizeMode, label }: { photo: UploadedPhoto; style: object; resizeMode: 'cover' | 'contain'; label: string }) {
+  const source = useStoredFileSource(photo.fileId, photo.appId);
+  return (
+    <Image
+      source={source ?? { uri: photo.url }}
+      style={style}
+      resizeMode={resizeMode}
+      accessibilityRole="image"
+      accessibilityLabel={label}
+    />
+  );
+}
 
 /*
   ── WHAT A COORDINATOR COULD NOT SEE ─────────────────────────────────────
@@ -84,12 +102,11 @@ export function EvidenceGallery({
                 onPress={() => setViewing(photo)}
                 activeOpacity={0.85}
               >
-                <Image
-                  source={{ uri: photo.url }}
+                <GalleryImage
+                  photo={photo}
                   style={{ width: '100%', aspectRatio: 1, borderRadius: 8, backgroundColor: '#E8EDF3' }}
                   resizeMode="cover"
-                  accessibilityRole="image"
-                  accessibilityLabel={label(photo.slotKey, photo.relatedTo)}
+                  label={label(photo.slotKey, photo.relatedTo)}
                 />
                 <Text className="text-[10px] text-text-2 mt-1" numberOfLines={1}>
                   {label(photo.slotKey, photo.relatedTo)}
@@ -130,12 +147,11 @@ export function EvidenceGallery({
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
             {viewing && (
               <>
-                <Image
-                  source={{ uri: viewing.url }}
+                <GalleryImage
+                  photo={viewing}
                   style={{ width: '100%', aspectRatio: 1 }}
                   resizeMode="contain"
-                  accessibilityRole="image"
-                  accessibilityLabel={label(viewing.slotKey, viewing.relatedTo)}
+                  label={label(viewing.slotKey, viewing.relatedTo)}
                 />
                 <View className="px-5 mt-4">
                   <Text className="text-white font-bold text-base">

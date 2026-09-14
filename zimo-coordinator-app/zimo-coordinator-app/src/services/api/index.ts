@@ -188,23 +188,18 @@ export const uploadsApi = {
       '/uploads/presign',
       { params: { filename, contentType } }
     ),
+  /* `fileId` comes from uploadCapturedFile(). The service reads the rest from the stored file. */
   confirmPhoto: (appId: string, body: {
     relatedTo: string;
     slotKey?: string;
-    filename: string;
-    url: string;
-    mimeType: string;
-    sizeBytes: number;
+    fileId: string;
     capturedAt: string;
     gpsTagLat?: number;
     gpsTagLng?: number;
   }) => api.post(`/uploads/photos/${appId}`, body),
   confirmDocument: (appId: string, body: {
     relatedTo: 'identity' | 'landOwnership';
-    filename: string;
-    url: string;
-    mimeType: string;
-    sizeBytes: number;
+    fileId: string;
     capturedAt: string;
   }) => api.post(`/uploads/documents/${appId}`, body),
   photos: (appId: string, relatedTo?: string) =>

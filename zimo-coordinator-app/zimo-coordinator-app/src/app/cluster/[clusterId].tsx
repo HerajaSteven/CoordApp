@@ -14,6 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clustersApi, uploadsApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
 import { useCamera, type CapturedPhoto } from '@/features/camera/useCamera';
+import { storedFileUrl, uploadCapturedFile } from '@/features/camera/platformFile';
 import { Card, Button, Input, LoadingSpinner, ErrorMessage, HeaderBackButton } from '@/components/ui';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -85,32 +86,15 @@ export default function ClusterDetailScreen() {
 
   const cluster = data?.cluster;
 
-  // Cluster verification photos don't map to a farm application, so we upload
-  // straight to Cloudinary via the presign step and skip the confirmPhoto call
-  // (that endpoint is farm-application specific — see useCamera.ts uploadPhoto).
+  /*
+    Cluster photos are not tied to a farm application, so there is no
+    confirm call. They are stored the same way as every other photo (see
+    platformFile.ts), and the cluster keeps the address they are shown from.
+    The old Cloudinary upload was refused, like every other photo.
+  */
   const uploadToCloudinary = async (photo: CapturedPhoto): Promise<string | null> => {
-    const { data: presignData } = await uploadsApi.presign(photo.filename, photo.mimeType);
-    const { uploadUrl, signature, apiKey, timestamp, folder, publicId } = presignData.data;
-
-    const formData = new FormData();
-    formData.append('file', {
-      uri: photo.localUri,
-      type: photo.mimeType,
-      name: photo.filename,
-    } as unknown as Blob);
-    formData.append('api_key', apiKey);
-    formData.append('timestamp', String(timestamp));
-    formData.append('signature', signature);
-    formData.append('folder', folder);
-    formData.append('public_id', publicId);
-
-    const uploadResponse = await fetch(uploadUrl, { method: 'POST', body: formData });
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Upload failed: ${errorText}`);
-    }
-    const result = (await uploadResponse.json()) as { secure_url: string };
-    return result.secure_url;
+    const fileId = await uploadCapturedFile(photo);
+    return storedFileUrl(fileId);
   };
 
   const handleCapturePhoto = async (slot: 'entrance' | 'overview') => {

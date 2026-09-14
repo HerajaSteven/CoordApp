@@ -182,6 +182,9 @@ export interface TimelineEvent {
 
 // ─── Uploads ─────────────────────────────────────────────────────────────────
 export interface UploadedPhoto {
+  /** The stored file. Shown through useStoredFileSource, not `url`, which needs a sign-in. */
+  fileId?: string;
+  appId?: string;
   relatedTo: string;
   slotKey: string | null;
   url: string;
@@ -190,6 +193,8 @@ export interface UploadedPhoto {
 }
 
 export interface UploadedDocument {
+  fileId?: string;
+  appId?: string;
   relatedTo: string;
   url: string;
   filename: string;
