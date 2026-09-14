@@ -78,6 +78,10 @@
         "projectId": "a7f0848c-5d52-4d89-ac38-4aaca994f134"
       }
     },
-    "owner": "heraja"
+    "owner": "heraja",
+    "updates": {
+      "url": "https://u.expo.dev/a7f0848c-5d52-4d89-ac38-4aaca994f134",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }

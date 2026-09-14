@@ -13,7 +13,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { farmsApi, verificationApi, boundaryApi, categoriesApi } from '@/services/api';
+import { farmsApi, verificationApi, boundaryApi, categoriesApi, uploadsApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
 import { useCamera } from '@/features/camera/useCamera';
 import { useOfflineStore } from '@/store/offline.store';
@@ -31,7 +31,7 @@ import {
   InfoRow,
   HeaderBackButton,
 } from '@/components/ui';
-import type { CategoryFieldDef, DynamicCategoryEntry, FarmTypeCategory } from '@/types';
+import type { CategoryFieldDef, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
 import * as Network from 'expo-network';
 
 const STEPS = ['identity', 'farmType', 'gps', 'landOwnership', 'infrastructure', 'capacity', 'evidence', 'review'] as const;
@@ -1114,6 +1114,21 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
   farmType: 'crop' | 'livestock' | 'mixed';
 }) {
   const { photos, takePhoto, pickFromGallery, uploadPhoto, removePhoto } = useCamera(appId);
+
+  /*
+    Photos this farm already has on the platform.
+
+    Captures were only held in this screen's memory, so a coordinator who
+    left and came back found every slot empty and had to photograph the
+    whole farm again, although every photo had uploaded. A slot counts as
+    captured when this visit took it OR an earlier one did.
+  */
+  const { data: uploadedEvidence } = useQuery({
+    queryKey: ['evidence-photos', appId],
+    queryFn: () => uploadsApi.photos(appId, 'evidence'),
+    select: (res) => ((res.data as { data?: UploadedPhoto[] })?.data ?? []).filter((p) => !!p.slotKey),
+  });
+  const earlier = (slotKey: string) => (uploadedEvidence ?? []).find((p) => p.slotKey === slotKey);
   const coordinator = useAuthStore((s) => s.coordinator);
   const superAdminGalleryEvidenceEnabled = useSettingsStore((s) => s.superAdminGalleryEvidenceEnabled);
   const shouldUseGallery = coordinator?.role === 'SuperAdmin' && superAdminGalleryEvidenceEnabled;
@@ -1126,7 +1141,7 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
     (s) => s.allTypes || (s.types ?? []).includes(farmType)
   );
   const requiredCount = requiredSlots.length;
-  const completedSlots = requiredSlots.filter((s) => photos.find((p) => p.slotKey === s.key));
+  const completedSlots = requiredSlots.filter((s) => photos.find((p) => p.slotKey === s.key) || earlier(s.key));
   const completedCount = completedSlots.length;
 
   const handleCapture = async (slotKey: string) => {
@@ -1135,6 +1150,7 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
     setUploading(slotKey);
     await uploadPhoto(photo, 'evidence', currentLocation?.lat, currentLocation?.lng);
     setUploading(null);
+    await qc.invalidateQueries({ queryKey: ['evidence-photos', appId] });
   };
 
   const submit = async () => {
@@ -1169,21 +1185,25 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
 
         {requiredSlots.map((slot) => {
           const photo = photos.find((p) => p.slotKey === slot.key);
+          const saved = photo ? undefined : earlier(slot.key);
           const isUploading = uploading === slot.key;
           return (
             <View key={slot.key} className="mb-3">
               <View className="flex-row items-center justify-between mb-1.5">
                 <Text className="text-sm font-medium text-text">{slot.label}</Text>
                 {photo && <Badge label="Captured" variant="green" />}
+                {!photo && saved && <Badge label="Captured earlier" variant="green" />}
               </View>
               <TouchableOpacity
                 onPress={() => handleCapture(slot.key)}
-                className={`h-28 rounded-xl overflow-hidden items-center justify-center border-2 border-dashed ${photo ? 'border-green-500' : 'border-border'}`}
+                className={`h-28 rounded-xl overflow-hidden items-center justify-center border-2 border-dashed ${photo || saved ? 'border-green-500' : 'border-border'}`}
               >
                 {isUploading ? (
                   <ActivityIndicator color="#0D7A3D" />
                 ) : photo ? (
                   <Image source={{ uri: photo.localUri }} className="w-full h-full" resizeMode="cover" />
+                ) : saved ? (
+                  <Image source={{ uri: saved.url }} className="w-full h-full" resizeMode="cover" />
                 ) : (
                   <View className="items-center">
                     <Text className="text-2xl">📷</Text>
@@ -1290,11 +1310,23 @@ export default function VerificationWizard() {
   };
   const overallStatus = profile?.verification?.overallStatus;
 
-  // Determine which step to show first: the first incomplete step
+  /*
+    ── WHERE THE COORDINATOR LEFT OFF ─────────────────────────────────────
+
+    The step was chosen once, as the screen first rendered. On a fresh
+    open the farm's saved progress was still loading at that moment, so
+    nothing looked done and the wizard started at identity. It never looked
+    again, so a verification stopped halfway began from the start every
+    time, even though the platform had every completed step saved.
+
+    So the step shown follows the saved progress until the coordinator
+    chooses one: moving on, tapping a step dot, or being sent back to farm
+    type. After that, their choice stands.
+  */
   const firstIncomplete = STEPS.find((s) => !completedSteps.includes(s)) ?? 'review';
-  const [activeStep, setActiveStep] = useState<Step>(
-    completedSteps.length === STEPS.length ? 'review' : firstIncomplete
-  );
+  const resumeAt: Step = completedSteps.length === STEPS.length ? 'review' : firstIncomplete;
+  const [chosenStep, setActiveStep] = useState<Step | null>(null);
+  const activeStep: Step = chosenStep ?? resumeAt;
   const stepIndex = STEPS.indexOf(activeStep);
 
   /*

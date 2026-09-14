@@ -28,6 +28,11 @@ export const authApi = {
   refresh: (refreshToken: string) =>
     api.post<ApiResponse<AuthTokens>>('/auth/refresh', { refreshToken }),
   logout: () => api.post('/auth/logout'),
+  /** Sends a reset code to the email. How a newly approved coordinator sets a first password. */
+  forgotPassword: (email: string) =>
+    api.post<ApiResponse<{ message: string }>>('/auth/forgot-password', { email }),
+  resetPassword: (input: { email: string; code: string; password: string }) =>
+    api.post<ApiResponse<{ message: string }>>('/auth/reset-password', input),
 };
 
 // ─── Coordinator ──────────────────────────────────────────────────────────────

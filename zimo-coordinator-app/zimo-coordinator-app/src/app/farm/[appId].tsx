@@ -392,13 +392,17 @@ export default function FarmDetailScreen() {
                   return;
                 }
 
-                Alert.alert('Verification Unavailable', 'This farm is already submitted/verified and cannot be edited.');
+                Alert.alert('Already submitted', 'This verification has been submitted. It can’t be changed while it is being reviewed.');
               }}
               className={`rounded-2xl p-4 items-center ${canVerify ? 'bg-green-500' : 'bg-gray-300'}`}
               activeOpacity={0.85}
             >
               <Text className={`font-bold text-base ${canVerify ? 'text-white' : 'text-text-3'}`}>
-                {canVerify ? 'Open Verification Wizard' : 'Verification Unavailable'}
+                {!canVerify
+                  ? 'Submitted: Waiting for Review'
+                  : completedSteps.length === 0
+                    ? 'Start Verification'
+                    : `Continue Verification (${completedSteps.length} of ${STEPS.length} done)`}
               </Text>
             </TouchableOpacity>
           </View>

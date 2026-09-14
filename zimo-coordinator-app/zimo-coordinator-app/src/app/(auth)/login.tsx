@@ -118,6 +118,17 @@ export default function LoginScreen() {
               size="lg"
               style={{ marginTop: 8 }}
             />
+
+            {/*
+              A coordinator whose application was just approved has an
+              account and no password yet. This is how they set one.
+            */}
+            <Button
+              label="First time, or forgot your password?"
+              onPress={() => router.push('/(auth)/forgot-password')}
+              variant="ghost"
+              fullWidth
+            />
           </View>
 
           {/* Footer */}
