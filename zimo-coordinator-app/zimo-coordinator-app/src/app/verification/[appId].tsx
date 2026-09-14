@@ -57,7 +57,8 @@ const EVIDENCE_SLOTS = [
   { key: 'ev-crop-overview', label: 'Crop Overview', required: true, allTypes: false, types: ['crop', 'mixed'] },
   { key: 'ev-storage', label: 'Storage Area', required: true, allTypes: false, types: ['crop', 'mixed'] },
   { key: 'ev-pen-cage', label: 'Pen / Cage', required: true, allTypes: false, types: ['livestock', 'mixed'] },
-  { key: 'ev-stock-visible', label: 'Stock / Animals', required: true, allTypes: false, types: ['livestock', 'mixed'] },
+  /* Verification is before the first batch, so there are no animals to photograph: the farm's biosecurity instead. */
+  { key: 'ev-biosecurity', label: 'Biosecurity (footbath, fencing)', required: true, allTypes: false, types: ['livestock', 'mixed'] },
 ];
 
 // ─── Step: Identity ───────────────────────────────────────────────────────────
@@ -310,7 +311,7 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
         'Which ones?',
         selected === 'crop'
           ? 'Choose at least one crop this farm grows.'
-          : 'Choose at least one kind of livestock this farm keeps.'
+          : 'Choose at least one kind of livestock this farm is set up to keep.'
       );
       return;
     }
@@ -361,9 +362,9 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
 
       {wantsLivestock && livestock.length > 0 && (
         <Card className="mb-4">
-          <Text className="font-bold text-text mb-1">Livestock Type</Text>
+          <Text className="font-bold text-text mb-1">Livestock the Farm Is Set Up For</Text>
           <Text className="text-text-3 text-xs mb-3">
-            Pick every kind this farm keeps. Only these are asked about at the capacity step.
+            Pick every kind this farm is set up to keep. Only these are asked about at the capacity step.
           </Text>
           <CategoryChips
             categories={livestock}

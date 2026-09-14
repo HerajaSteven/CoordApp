@@ -51,6 +51,7 @@ const SLOT_LABELS: Record<string, string> = {
   'ev-crop-overview': 'Crop overview',
   'ev-storage': 'Storage',
   'ev-pen-cage': 'Pen / cage',
+  'ev-biosecurity': 'Biosecurity',
   'ev-stock-visible': 'Stock visible',
   'ev-farmer-selfie': 'Farmer',
 };
