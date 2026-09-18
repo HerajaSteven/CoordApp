@@ -1,15 +1,17 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { View } from 'react-native';
+import type { ReactNode } from 'react';
+import { ChartBar, CheckCircle, FolderSimple, House, Plant, User } from 'phosphor-react-native';
 import { Text, scaled } from '@/components/ui/typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth.store';
 import { Redirect } from 'expo-router';
 
-function TabIcon({ focused, label, icon }: { focused: boolean; label: string; icon: string }) {
+function TabIcon({ focused, label, icon }: { focused: boolean; label: string; icon: ReactNode }) {
   return (
     <View className="items-center justify-center pt-1">
-      <Text style={{ fontSize: 20 }}>{icon}</Text>
+      <View>{icon}</View>
       <Text
         className={`text-xs mt-0.5 ${focused ? 'text-green-500 font-semibold' : 'text-text-3'}`}
         numberOfLines={1}
@@ -66,37 +68,37 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Home" icon="🏠" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Home" icon={<House size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
         }}
       />
       <Tabs.Screen
         name="farms"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Farms" icon="🌾" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Farms" icon={<Plant size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
         }}
       />
       <Tabs.Screen
         name="clusters"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Clusters" icon="🗂️" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Clusters" icon={<FolderSimple size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
         }}
       />
       <Tabs.Screen
         name="monitor"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Monitor" icon="📊" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Monitor" icon={<ChartBar size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
         }}
       />
       <Tabs.Screen
         name="tasks"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Tasks" icon="✅" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Tasks" icon={<CheckCircle size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Profile" icon="👤" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Profile" icon={<User size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
         }}
       />
     </Tabs>

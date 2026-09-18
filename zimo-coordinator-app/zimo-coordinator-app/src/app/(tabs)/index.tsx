@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import type { ReactNode } from 'react';
+import { ArrowsClockwise, MapTrifold, Package, PuzzlePiece, Receipt, Siren, WifiHigh } from 'phosphor-react-native';
 import { Text } from '@/components/ui/typography';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
@@ -52,7 +54,7 @@ function StatPill({ label, value, colour = '#FFFFFF' }: {
 }
 
 function QuickAction({ icon, label, tone, onPress }: {
-  icon: string;
+  icon: ReactNode;
   label: string;
   tone: 'green' | 'dark' | 'amber' | 'red';
   onPress: () => void;
@@ -70,7 +72,7 @@ function QuickAction({ icon, label, tone, onPress }: {
       activeOpacity={0.85}
       className={`${tones[tone]} rounded-2xl px-3 py-4 flex-1 flex-row items-center`}
     >
-      <Text className="text-lg mr-2">{icon}</Text>
+      <View className="mr-2">{icon}</View>
       <Text className="text-white font-semibold text-sm flex-1" numberOfLines={2}>
         {label}
       </Text>
@@ -186,27 +188,27 @@ export default function DashboardScreen() {
         <Text className="font-bold text-text mb-3">Quick Actions</Text>
         <View className="mb-6" style={{ gap: 10 }}>
           <View className="flex-row" style={{ gap: 10 }}>
-            <QuickAction icon="🧾" label="My Farms" tone="green" onPress={go('/(tabs)/farms')} />
-            <QuickAction icon="🗺️" label="Farm Map" tone="dark" onPress={go('/map')} />
+            <QuickAction icon={<Receipt size={20} weight="fill" color="#fff" />} label="My Farms" tone="green" onPress={go('/(tabs)/farms')} />
+            <QuickAction icon={<MapTrifold size={20} weight="fill" color="#fff" />} label="Farm Map" tone="dark" onPress={go('/map')} />
           </View>
           <View className="flex-row" style={{ gap: 10 }}>
             {/* Named for what it opens. That tab is the offline queue, not a
                 task list, and a tile promising tasks would be a lie told
                 twice a day. */}
-            <QuickAction icon="🔄" label="Offline Sync" tone="amber" onPress={go('/(tabs)/tasks')} />
-            <QuickAction icon="📡" label="Monitoring" tone="green" onPress={go('/(tabs)/monitor')} />
+            <QuickAction icon={<ArrowsClockwise size={20} weight="fill" color="#fff" />} label="Offline Sync" tone="amber" onPress={go('/(tabs)/tasks')} />
+            <QuickAction icon={<WifiHigh size={20} weight="fill" color="#fff" />} label="Monitoring" tone="green" onPress={go('/(tabs)/monitor')} />
           </View>
           <View className="flex-row" style={{ gap: 10 }}>
-            <QuickAction icon="🧩" label="Clusters" tone="dark" onPress={go('/(tabs)/clusters')} />
+            <QuickAction icon={<PuzzlePiece size={20} weight="fill" color="#fff" />} label="Clusters" tone="dark" onPress={go('/(tabs)/clusters')} />
             <QuickAction
-              icon="🚨"
+              icon={<Siren size={20} weight="fill" color="#fff" />}
               label="Report Incident"
               tone="red"
               onPress={go('/(tabs)/farms')}
             />
           </View>
           <View className="flex-row" style={{ gap: 10 }}>
-            <QuickAction icon="📦" label="Harvest Pickup" tone="green" onPress={go('/harvest')} />
+            <QuickAction icon={<Package size={20} weight="fill" color="#fff" />} label="Harvest Pickup" tone="green" onPress={go('/harvest')} />
             {/* Keeps the row's width: a lone tile stretching across two
                 columns reads as a different kind of button. */}
             <View className="flex-1" />

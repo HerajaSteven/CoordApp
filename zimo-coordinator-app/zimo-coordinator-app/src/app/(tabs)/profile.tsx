@@ -8,6 +8,7 @@ import {
   PixelRatio,
   useWindowDimensions,
 } from 'react-native';
+import { ArrowsClockwise, Camera, ClipboardText, Info, MapPin, Ruler } from 'phosphor-react-native';
 import { Text } from '@/components/ui/typography';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,7 +19,7 @@ import { Card, InfoRow, Divider, Button } from '@/components/ui';
 import { HerajaMark } from '@/components/ui/HerajaMark';
 
 function SettingRow({ icon, label, onPress, danger = false, right }: {
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   onPress?: () => void;
   danger?: boolean;
@@ -31,7 +32,7 @@ function SettingRow({ icon, label, onPress, danger = false, right }: {
       activeOpacity={onPress ? 0.7 : 1}
       disabled={!onPress && !right}
     >
-      <Text className="text-xl w-8">{icon}</Text>
+      <View className="w-8 items-center">{icon}</View>
       <Text className={`flex-1 text-sm font-medium ml-2 ${danger ? 'text-red-500' : 'text-text'}`}>
         {label}
       </Text>
@@ -107,7 +108,7 @@ export default function ProfileScreen() {
           {isSuperAdmin && (
             <>
               <SettingRow
-                icon="📍"
+                icon={<MapPin size={20} weight="fill" color="#6b7280" />}
                 label="Default to manual coordinate entry"
                 right={
                   <Switch
@@ -123,7 +124,7 @@ export default function ProfileScreen() {
               </Text>
               <Divider />
               <SettingRow
-                icon="📷"
+                icon={<Camera size={20} weight="fill" color="#6b7280" />}
                 label="Use gallery upload for verification photos"
                 right={
                   <Switch
@@ -141,12 +142,12 @@ export default function ProfileScreen() {
             </>
           )}
           <SettingRow
-            icon="🔄"
+            icon={<ArrowsClockwise size={20} weight="fill" color="#6b7280" />}
             label={queue.length > 0 ? `Sync Now (${queue.length} pending)` : 'Sync Now'}
             onPress={sync}
           />
           <Divider />
-          <SettingRow icon="ℹ️" label="App Version" right={<Text className="text-text-3 text-sm">1.0.0</Text>} />
+          <SettingRow icon={<Info size={20} weight="fill" color="#6b7280" />} label="App Version" right={<Text className="text-text-3 text-sm">1.0.0</Text>} />
           <Divider />
           {/*
             ── WHAT THIS DEVICE SAYS ITS SCREEN IS ────────────────────────
@@ -167,7 +168,7 @@ export default function ProfileScreen() {
             not a plan.
           */}
           <SettingRow
-            icon="📐"
+            icon={<Ruler size={20} weight="fill" color="#6b7280" />}
             label="Screen"
             right={
               <Text className="text-text-3 text-sm">
@@ -177,7 +178,7 @@ export default function ProfileScreen() {
             }
           />
           <Divider />
-          <SettingRow icon="📋" label="Clear Cache" onPress={() => {
+          <SettingRow icon={<ClipboardText size={20} weight="fill" color="#6b7280" />} label="Clear Cache" onPress={() => {
             Alert.alert('Clear Cache', 'This clears downloaded data. Pending offline data will not be affected.', [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Clear', onPress: () => {} },
