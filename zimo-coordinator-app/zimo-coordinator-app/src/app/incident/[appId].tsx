@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { Text } from '@/components/ui/typography';
+import { Text, FACE } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { incidentsApi } from '@/services/api';
@@ -85,7 +85,7 @@ export default function IncidentReportScreen() {
           title: 'Report Incident',
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
-          headerTitleStyle: { fontWeight: 'bold', color: '#fff' },
+          headerTitleStyle: { fontFamily: FACE.bold, color: '#fff' },
           headerLeft: () => <HeaderBackButton fallbackHref={`/farm/${appId}`} />,
         }}
       />
