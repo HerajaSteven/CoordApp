@@ -59,7 +59,29 @@ export const MAX_FONT_SCALE = 1.2;
   regular face, so a weight class has to resolve to its own loaded family
   — see tailwind.config.js.
 */
-const BODY_FACE = 'Poppins_400Regular';
+/*
+  ── AND THE CHROME NEEDS THEM BY NAME ────────────────────────────────────
+
+  A native header title and a tab label are drawn by the navigator, not by
+  a component here, so they take a style object rather than a class. They
+  were the one part of the app still in the handset's own typeface: six
+  screens set `headerTitleStyle: { fontWeight: 'bold' }` and got system
+  bold over Poppins screens.
+
+  Exported as faces rather than weights BECAUSE ANDROID DOES NOT
+  SYNTHESISE ONE FROM THE OTHER. `{ fontFamily: FACE.regular, fontWeight:
+  'bold' }` renders regular there — the bold has to be its own loaded
+  face, which is the same reason tailwind.config.js maps each weight to
+  its own family.
+*/
+export const FACE = {
+  regular: 'Poppins_400Regular',
+  medium: 'Poppins_500Medium',
+  semibold: 'Poppins_600SemiBold',
+  bold: 'Poppins_700Bold',
+} as const;
+
+const BODY_FACE = FACE.regular;
 
 /** Text that grows with the reader's setting, up to where the layout holds. */
 export function Text({ maxFontSizeMultiplier, style, ...rest }: TextProps) {
