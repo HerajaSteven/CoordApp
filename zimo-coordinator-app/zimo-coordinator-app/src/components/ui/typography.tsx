@@ -8,8 +8,6 @@ import {
 } from 'react-native';
 
 /*
-  ── WHY THE APP LOOKED ZOOMED ────────────────────────────────────────────
-
   The design is drawn at a fixed scale. The prototype says so outright:
 
       <meta name="viewport" content="... maximum-scale=1.0, user-scalable=no">
@@ -36,8 +34,6 @@ import {
   by a fifth, which is enough to help and not enough to break a layout, and
   it is a single number to change if the field says otherwise.
 
-  ── WHY A WRAPPER AND NOT A GLOBAL DEFAULT ───────────────────────────────
-
   `Text.defaultProps.maxFontSizeMultiplier = …` was the usual trick and it
   is gone: React 19 dropped defaultProps for function components, and
   React Native's Text is a forwardRef. Setting it now does nothing at all
@@ -47,8 +43,6 @@ import {
 export const MAX_FONT_SCALE = 1.2;
 
 /*
-  ── AND THE FONT REACHES EVERY SCREEN FROM HERE ──────────────────────────
-
   Nothing loaded a font before this, so the whole app rendered in whatever
   the handset shipped. Poppins is loaded in the root layout; this is what
   makes the 250-odd Text elements use it without every one of them saying
@@ -60,8 +54,6 @@ export const MAX_FONT_SCALE = 1.2;
   — see tailwind.config.js.
 */
 /*
-  ── AND THE CHROME NEEDS THEM BY NAME ────────────────────────────────────
-
   A native header title and a tab label are drawn by the navigator, not by
   a component here, so they take a style object rather than a class. They
   were the one part of the app still in the handset's own typeface: six

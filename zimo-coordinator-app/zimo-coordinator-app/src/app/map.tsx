@@ -10,15 +10,11 @@ import { Card, LoadingSpinner, ErrorMessage, StatusBadge, HeaderBackButton } fro
 import type { FarmRegistration } from '@/types';
 
 /*
-  ── WHAT THIS IS FOR ─────────────────────────────────────────────────────
-
   A coordinator holds a caseload spread across a local government, and the
   question that orders their day is which farm is NEAREST — to verify, to
   inspect, or to look at something flagged. A list sorted by when a farm
   was registered cannot answer that, and opening each farm to read its
   coordinates is a call per farm before the first decision.
-
-  ── WHY LEAFLET IN A WEBVIEW AND NOT A NATIVE MAP ────────────────────────
 
   `react-native-maps` draws through Google Maps on Android, which needs an
   API key and a billing account. Without one the canvas is a plain grey
@@ -28,8 +24,6 @@ import type { FarmRegistration } from '@/types';
   Logistics routes screen draws the same tiles from the same setting. One
   operator repointing `logistics.map_tile_url` moves every client at once,
   which is the whole reason the URL is fetched rather than compiled in.
-
-  ── A FARM WITH NO POINT IS SAID, NOT HIDDEN ─────────────────────────────
 
   Coordinates come from the farm profile, written when somebody stood on
   it. A registration nobody has visited has none — and it is listed below

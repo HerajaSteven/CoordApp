@@ -2,8 +2,6 @@ const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
 const config = getDefaultConfig(__dirname);
 /*
-  ── WHY inlineRem IS FALSE ───────────────────────────────────────────────
-
   NativeWind's default is 14, and it is the reason the app read as zoomed
   out on every device.
 

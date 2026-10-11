@@ -3,22 +3,16 @@ import { useWindowDimensions } from 'react-native';
 import { rem } from 'nativewind';
 
 /*
-  ── THE SAME DESIGN ON EVERY SCREEN ──────────────────────────────────────
-
   Tailwind's scale is in rem — `text-sm` is 0.875rem, `p-4` is 1rem — so
   one number decides how large the whole design draws. Setting it from the
   width of the screen is what makes a card occupy the same PROPORTION of a
   small phone and a large one, instead of the same number of pixels on
   both and a different-looking app on each.
 
-  ── WHAT THE APP WAS DOING BEFORE ────────────────────────────────────────
-
   NativeWind inlines rem at 14 unless told otherwise, so every size in the
   app compiled at 87.5% of what its class name said, on every device. That
   is uniform shrinkage with the proportions intact, which is why it read as
   zoomed out and why looking for it among the font sizes found nothing.
-
-  ── WHY THE SCALING IS CLAMPED ───────────────────────────────────────────
 
   Pure proportionality is wrong at the ends. A tablet is not a phone held
   closer — it is held further away, and scaling type by its width would

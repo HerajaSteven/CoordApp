@@ -83,8 +83,6 @@ function AppContent() {
 
 export default function RootLayout() {
   /*
-    ── THE APP HAD NO FONT OF ITS OWN ────────────────────────────────────
-
     Nothing was ever loaded, so every screen rendered in whatever the
     device ships — Roboto on most Android phones, and something else
     entirely on the handsets that do not. A design drawn to one set of

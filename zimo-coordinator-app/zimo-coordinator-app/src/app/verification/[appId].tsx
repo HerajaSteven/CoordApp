@@ -227,8 +227,6 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
 /**
  * Which categories a farm keeps, chosen where the design puts it.
  *
- * ── WHY THE QUESTION BELONGS ON THIS STEP ────────────────────────────────
- *
  * This step "determines the verification checklist used for this farm", and
  * "livestock farm" does not determine it — poultry and catfish are asked
  * different questions. Without the answer the capacity step had nothing to
@@ -796,8 +794,6 @@ function InfrastructureStep({ appId, unitId, onNext }: { appId: string; unitId?:
 /**
  * One question of a category, drawn as whatever kind of question it is.
  *
- * ── EVERY TYPE, NOT ONLY THE TYPED-IN ONES ───────────────────────────────
- *
  * This rendered `number` and `text` and dropped the rest on the floor. Five
  * of the six answers Poultry requires are a select or a boolean — `type`,
  * `housingType`, `vaccinationStatus`, `feedSource`, `veterinaryAccess` — so
@@ -1339,8 +1335,6 @@ export default function VerificationWizard() {
   const overallStatus = profile?.verification?.overallStatus;
 
   /*
-    ── WHERE THE COORDINATOR LEFT OFF ─────────────────────────────────────
-
     The step was chosen once, as the screen first rendered. On a fresh
     open the farm's saved progress was still loading at that moment, so
     nothing looked done and the wizard started at identity. It never looked

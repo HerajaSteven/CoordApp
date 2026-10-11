@@ -3,15 +3,11 @@ import { View, Image } from 'react-native';
 import { Text } from './typography';
 
 /*
-  ── THE PLATFORM BEHIND THE PRODUCT ──────────────────────────────────────
-
   Zimo Field Coordinator is one app on Heraja. A coordinator signing in on
   a phone somebody handed them at a cooperative office has no other way of
   knowing whose system holds the evidence they are about to record, and
   "who is this" is a fair question from a person being asked to photograph
   a farmer's identity document.
-
-  ── SIZED BY WIDTH, NEVER BY BOTH ────────────────────────────────────────
 
   The wordmark is 2828x819 — a 3.45:1 letterbox. Giving it a width AND a
   height is how a logo gets squashed, and a stretched wordmark is the one

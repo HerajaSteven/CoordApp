@@ -23,8 +23,6 @@ function GalleryImage({ photo, style, resizeMode, label }: { photo: UploadedPhot
 }
 
 /*
-  ── WHAT A COORDINATOR COULD NOT SEE ─────────────────────────────────────
-
   `GET /farms/:appId/profile` has always returned `photos[]` and
   `documents[]` — every capture, with its slot, its filename, the moment
   the shutter fired and a URL to fetch it. The farm screen rendered none of
@@ -36,8 +34,6 @@ function GalleryImage({ photo, style, resizeMode, label }: { photo: UploadedPhot
   what was captured before, or they photograph it all again. And a
   coordinator who suspects a farm was signed off without a visit has no way
   to check — which is the whole point of holding evidence.
-
-  ── CAPTURED-AT IS SHOWN, ALWAYS ─────────────────────────────────────────
 
   The one fact that distinguishes evidence of a visit from evidence of an
   upload. A photograph taken three weeks before the verification was

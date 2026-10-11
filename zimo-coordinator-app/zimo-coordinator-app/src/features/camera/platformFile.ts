@@ -3,8 +3,6 @@ import type { ImageSourcePropType } from 'react-native';
 import { api, API_BASE_URL, tokenStorage } from '@/services/api/client';
 
 /*
-  ── HOW A PHOTO GETS STORED ────────────────────────────────────────────
-
   This app used to post photos to Cloudinary with a signature. Evidence
   moved to the platform's own storage, and the app was never updated: it
   kept posting the old signed form, with no sign-in, to an address that

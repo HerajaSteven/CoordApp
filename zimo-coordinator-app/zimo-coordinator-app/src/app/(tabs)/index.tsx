@@ -14,22 +14,16 @@ import { Card, StatusBadge, LoadingSpinner, SectionHeader, ProgressBar } from '@
 import type { FarmRegistration } from '@/types';
 
 /*
-  ── THE FIELD AGENT'S HOME ───────────────────────────────────────────────
-
   Drawn to the prototype: a dark header carrying who they are and a strip
   of figures that SCROLLS rather than four boxes squeezed into one row,
   then the actions they actually start a day from, then today's work, then
   their farms.
-
-  ── WHY THE STATS SCROLL ─────────────────────────────────────────────────
 
   There are five worth showing and a phone is 390dp wide. Four crammed
   into one row gave each about 80dp — enough for a number and a truncated
   word, which is how "In Progress" became unreadable. A horizontal strip
   keeps each one legible and lets a sixth be added later without
   redesigning the row.
-
-  ── AND WHY EVERY ACTION HERE GOES SOMEWHERE ─────────────────────────────
 
   A tile that opens nothing teaches people not to trust the grid. The
   prototype has eight; these are the ones this app can actually carry out

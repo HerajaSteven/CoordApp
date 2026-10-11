@@ -11,13 +11,9 @@ import { Card, Button, Input, LoadingSpinner, ErrorMessage, HeaderBackButton, Ba
 import type { CollectableBatch, CollectableFarm } from '@/types';
 
 /*
-  ── HARVEST PICKUP ───────────────────────────────────────────────────────
-
   What a coordinator does when a cohort is ready: they arrive, count what
   they are taking, weigh a sample, and the platform settles it — money
   reaching a farmer.
-
-  ── WHAT IS DELIBERATELY NOT HERE ────────────────────────────────────────
 
   No amount. Nothing on this screen calculates what anybody is paid; the
   platform does that from the headcount and the weight, and a second
@@ -27,8 +23,6 @@ import type { CollectableBatch, CollectableFarm } from '@/types';
   with no signal and replayed an hour later is a payment made against a
   cohort that may since have emptied — so it asks for a connection and
   says so, rather than promising to send it later.
-
-  ── AND THE FARM LIST IS THE PLATFORM'S ──────────────────────────────────
 
   It offers only farms with open batches, because offering an emptied
   cohort produces a confirmation the platform then refuses, and offering a
@@ -73,8 +67,6 @@ export default function HarvestPickupScreen() {
   const [avgWeight, setAvgWeight] = useState('');
   const [saving, setSaving] = useState(false);
   /*
-    ── WHAT THE PAYMENT NOW WAITS ON ─────────────────────────────────────
-
     A pickup used to be paid the moment it was confirmed here, on this
     screen's numbers alone. Now the farmer and, when a driver takes it,
     logistics each record the weight with photos, and the farmer and driver

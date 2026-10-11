@@ -150,8 +150,6 @@ export default function ProfileScreen() {
           <SettingRow icon={<Info size={20} weight="fill" color="#6b7280" />} label="App Version" right={<Text className="text-text-3 text-sm">1.0.0</Text>} />
           <Divider />
           {/*
-            ── WHAT THIS DEVICE SAYS ITS SCREEN IS ────────────────────────
-
             "The app looks zoomed out" is a report nobody can act on from a
             desk: it could be the type scale, the OS display size, or a
             handset reporting a width no phone should. These are the three

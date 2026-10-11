@@ -333,8 +333,6 @@ export default function FarmDetailScreen() {
             )}
 
             {/*
-              ── WHO DID THIS, AND WHEN ────────────────────────────────
-
               A coordinator arriving at a farm another coordinator has
               already been to could see that a step was complete and
               nothing about who completed it. Sent to re-verify, they had

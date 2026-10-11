@@ -22,8 +22,6 @@ module.exports = {
       },
 
       /*
-        ── NO fontSize OVERRIDE HERE, DELIBERATELY ────────────────────────
-
         There was one, in absolute pixels, written when the app looked
         small and the cause was still unknown. It would have half-worked
         and hidden the real fault: absolute sizes escape rem, so the type

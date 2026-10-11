@@ -31,8 +31,6 @@ export default function TabsLayout() {
   const tabBarPaddingBottom = Math.max(8, insets.bottom);
 
   /*
-    ── AND HOLD ITS CONTENT WHEN THE TYPE GROWS ──────────────────────────
-
     This was a flat 56. The bar's contents are an emoji and a label —
     both TEXT, both obeying the device's font-scale setting — inside a box
     that did not. Raise "Display size" on an Android phone and the icons
