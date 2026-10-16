@@ -230,6 +230,11 @@ export interface FarmVisit {
   visitedAt: string;
   cropHealth: 'excellent' | 'good' | 'fair' | 'poor' | null;
   pestSigns: boolean;
+  /* The service has recorded these since the move to MySQL; the type did not. */
+  diseaseSigns: boolean;
+  nutrientDeficiencySigns: boolean;
+  waterSupplyStatus: string | null;
+  fertilizerApplicationStatus: string | null;
   notes: string | null;
 }
 

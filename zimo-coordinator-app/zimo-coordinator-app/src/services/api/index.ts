@@ -214,12 +214,21 @@ export const uploadsApi = {
 export const visitsApi = {
   list: (appId: string, params: { page?: number; limit?: number } = {}) =>
     api.get<ApiResponse<PaginatedResponse<FarmVisit>>>(`/visits/${appId}`, { params }),
+  /*
+    The whole schema the service validates. Three of these fields could not
+    be sent before — nutrient deficiency, water supply and fertiliser status
+    were accepted by the backend and absent here, so an inspection could
+    never record them.
+  */
   create: (appId: string, body: {
     visitType: 'verification' | 'inspection';
     visitedAt: string;
-    cropHealth?: string;
+    cropHealth?: 'excellent' | 'good' | 'fair' | 'poor';
     pestSigns?: boolean;
     diseaseSigns?: boolean;
+    nutrientDeficiencySigns?: boolean;
+    waterSupplyStatus?: string;
+    fertilizerApplicationStatus?: string;
     notes?: string;
   }) => api.post(`/visits/${appId}`, body),
 };

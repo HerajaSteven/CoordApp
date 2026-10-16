@@ -270,6 +270,14 @@ export default function FarmDetailScreen() {
                 <Text className="text-white font-bold text-sm">🗺️ Manage Sites</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                onPress={() => router.push(`/inspection/${appId}`)}
+                className="bg-green-50 border border-green-100 rounded-2xl p-4 items-center"
+                activeOpacity={0.85}
+                style={{ minWidth: 90 }}
+              >
+                <Text className="text-green-500 font-bold text-sm">🌱 Inspect</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => router.push(`/incident/${appId}`)}
                 className="bg-red-50 border border-red-100 rounded-2xl p-4 items-center"
                 activeOpacity={0.85}
