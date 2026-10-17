@@ -1,11 +1,10 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import type { ReactNode } from 'react';
-import { ArrowsClockwise, MapTrifold, Package, PuzzlePiece, Receipt, Siren, WifiHigh } from 'phosphor-react-native';
+import { Leaf, MapTrifold, Package, Receipt, Siren, WifiHigh } from 'phosphor-react-native';
 import { Text } from '@/components/ui/typography';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
-import * as Network from 'expo-network';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { farmsApi } from '@/services/api';
 import { useAuthStore } from '@/store/auth.store';
@@ -107,7 +106,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const coordinator = useAuthStore((s) => s.coordinator);
-  const { queue, sync, isSyncing, lastSyncAt } = useOfflineStore();
+  const { queue, isSyncing, lastSyncAt } = useOfflineStore();
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['farms'],
@@ -116,14 +115,12 @@ export default function DashboardScreen() {
   });
 
 
-  useEffect(() => {
-    (async () => {
-      if (queue.length > 0) {
-        const state = await Network.getNetworkStateAsync();
-        if (state.isConnected) sync();
-      }
-    })();
-  }, []);
+  /*
+    The dashboard used to run its own sync on mount, a second copy of what
+    useNetworkSync does for the whole session. Two pollers meant the queue
+    could be drained twice over and only one of them was ever fixed when the
+    cold-start case was found. Syncing lives in the hook now.
+  */
 
   const farms = data?.items ?? [];
   const verified = farms.filter((f) => f.status === 'verified').length;
@@ -154,15 +151,19 @@ export default function DashboardScreen() {
           {[coordinator?.lga, coordinator?.state].filter(Boolean).join(', ') || 'Unposted'}
         </Text>
 
+        {/*
+          Status, not a control. The queue drains itself as soon as there is
+          a network — see useNetworkSync — so there is nothing to tap and
+          nothing a coordinator has to remember.
+        */}
         {queue.length > 0 && (
-          <TouchableOpacity
-            onPress={sync}
-            className="mt-3 flex-row items-center bg-white/20 rounded-xl px-3 py-2 self-start"
-          >
+          <View className="mt-3 flex-row items-center bg-white/20 rounded-xl px-3 py-2 self-start">
             <Text className="text-white text-xs font-medium">
-              {isSyncing ? '⟳ Syncing...' : `⚠ ${queue.length} pending · Tap to sync`}
+              {isSyncing
+                ? '⟳ Syncing…'
+                : `${queue.length} saved here · will send when back online`}
             </Text>
-          </TouchableOpacity>
+          </View>
         )}
 
         <ScrollView
@@ -186,27 +187,24 @@ export default function DashboardScreen() {
             <QuickAction icon={<MapTrifold size={20} weight="fill" color="#fff" />} label="Farm Map" tone="dark" onPress={go('/map')} />
           </View>
           <View className="flex-row" style={{ gap: 10 }}>
-            {/* Named for what it opens. That tab is the offline queue, not a
-                task list, and a tile promising tasks would be a lie told
-                twice a day. */}
-            <QuickAction icon={<ArrowsClockwise size={20} weight="fill" color="#fff" />} label="Offline Sync" tone="amber" onPress={go('/(tabs)/tasks')} />
+            {/*
+              Inspection opens the farm list, because an inspection is always
+              OF a farm and the list is where one is chosen. The prototype
+              does the same.
+            */}
+            <QuickAction icon={<Leaf size={20} weight="fill" color="#fff" />} label="Inspection" tone="amber" onPress={go('/(tabs)/farms')} />
             <QuickAction icon={<WifiHigh size={20} weight="fill" color="#fff" />} label="Monitoring" tone="green" onPress={go('/(tabs)/monitor')} />
           </View>
           <View className="flex-row" style={{ gap: 10 }}>
-            <QuickAction icon={<PuzzlePiece size={20} weight="fill" color="#fff" />} label="Clusters" tone="dark" onPress={go('/(tabs)/clusters')} />
             <QuickAction
               icon={<Siren size={20} weight="fill" color="#fff" />}
               label="Report Incident"
               tone="red"
               onPress={go('/(tabs)/farms')}
             />
-          </View>
-          <View className="flex-row" style={{ gap: 10 }}>
             <QuickAction icon={<Package size={20} weight="fill" color="#fff" />} label="Harvest Pickup" tone="green" onPress={go('/harvest')} />
-            {/* Keeps the row's width: a lone tile stretching across two
-                columns reads as a different kind of button. */}
-            <View className="flex-1" />
           </View>
+
         </View>
 
         {unfinished.length > 0 && (

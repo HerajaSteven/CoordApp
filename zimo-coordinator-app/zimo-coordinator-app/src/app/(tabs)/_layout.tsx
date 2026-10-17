@@ -2,7 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { View } from 'react-native';
 import type { ReactNode } from 'react';
-import { ChartBar, CheckCircle, FolderSimple, House, Plant, User } from 'phosphor-react-native';
+import { ChartBar, CheckCircle, House, Plant, User } from 'phosphor-react-native';
 import { Text, scaled } from '@/components/ui/typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth.store';
@@ -73,12 +73,6 @@ export default function TabsLayout() {
         name="farms"
         options={{
           tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Farms" icon={<Plant size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
-        }}
-      />
-      <Tabs.Screen
-        name="clusters"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Clusters" icon={<FolderSimple size={20} weight={focused ? "fill" : "regular"} color={focused ? "#22c55e" : "#9ca3af"} />} />,
         }}
       />
       <Tabs.Screen

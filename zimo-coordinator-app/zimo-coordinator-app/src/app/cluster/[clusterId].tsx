@@ -156,7 +156,7 @@ export default function ClusterDetailScreen() {
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontFamily: FACE.bold, color: '#fff' },
-          headerLeft: () => <HeaderBackButton fallbackHref="/(tabs)/clusters" />,
+          headerLeft: () => <HeaderBackButton fallbackHref="/(tabs)/farms" />,
         }}
       />
 
