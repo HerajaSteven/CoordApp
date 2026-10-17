@@ -141,10 +141,18 @@ export default function ProfileScreen() {
               <Divider />
             </>
           )}
+          {/*
+            A reading rather than a button. Syncing is automatic, so offering
+            to do it by hand implies it would not happen otherwise.
+          */}
           <SettingRow
             icon={<ArrowsClockwise size={20} weight="fill" color="#6b7280" />}
-            label={queue.length > 0 ? `Sync Now (${queue.length} pending)` : 'Sync Now'}
-            onPress={sync}
+            label="Offline queue"
+            right={
+              <Text className="text-text-3 text-sm">
+                {queue.length === 0 ? 'Empty' : `${queue.length} waiting`}
+              </Text>
+            }
           />
           <Divider />
           <SettingRow icon={<Info size={20} weight="fill" color="#6b7280" />} label="App Version" right={<Text className="text-text-3 text-sm">1.0.0</Text>} />

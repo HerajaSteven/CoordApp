@@ -1,27 +1,13 @@
 import React from 'react';
 import { View, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { Text } from '@/components/ui/typography';
-import * as Network from 'expo-network';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOfflineStore } from '@/store/offline.store';
 import { Card, Button, SectionHeader, Badge } from '@/components/ui';
 
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
-  const { queue, sync, clearQueue, isSyncing, lastSyncAt } = useOfflineStore();
-
-  const handleSync = async () => {
-    const state = await Network.getNetworkStateAsync();
-    if (!state.isConnected) {
-      Alert.alert('No Internet', 'Connect to the internet and try again.');
-      return;
-    }
-    const result = await sync();
-    Alert.alert(
-      'Sync Complete',
-      `Synced: ${result.synced}\nConflicts: ${result.conflicts}\nErrors: ${result.errors}`
-    );
-  };
+  const { queue, clearQueue, isSyncing, lastSyncAt } = useOfflineStore();
 
   const handleClear = () => {
     Alert.alert(
@@ -38,7 +24,7 @@ export default function TasksScreen() {
     <ScrollView className="flex-1 bg-bg">
       <View className="bg-white pb-4 px-5 border-b border-border mb-4" style={{ paddingTop: insets.top + 12 }}>
         <Text className="text-xl font-bold text-text">Offline Sync</Text>
-        <Text className="text-text-3 text-sm mt-0.5">Manage pending offline data</Text>
+        <Text className="text-text-3 text-sm mt-0.5">Work saved on this phone, waiting for a network</Text>
       </View>
 
       <View className="px-5">
@@ -58,13 +44,17 @@ export default function TasksScreen() {
             </Text>
           )}
 
-          <Button
-            label={isSyncing ? 'Syncing...' : 'Sync Now'}
-            onPress={handleSync}
-            loading={isSyncing}
-            disabled={queue.length === 0}
-            fullWidth
-          />
+          {/*
+            No Sync button. The queue drains itself whenever there is a
+            network, so this card reports and does not ask.
+          */}
+          <Text className="text-xs text-text-3">
+            {isSyncing
+              ? 'Sending now…'
+              : queue.length === 0
+                ? 'Everything here has been sent.'
+                : 'These will send by themselves as soon as there is a network.'}
+          </Text>
 
           {queue.length > 0 && (
             <Button
