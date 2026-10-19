@@ -403,9 +403,14 @@ function describeArea(walk: Pick<ClosedWalk, 'derivedAreaHectares' | 'areaHectar
   /* The platform's reading, falling back to the service's own. Not zero if
      neither is known — "0 ha" is a measurement and "—" is not. */
   const hectares = walk.derivedAreaHectares ?? walk.areaHectares;
-  const area = hectares === null ? '— ha' : `${hectares.toFixed(4)} ha`;
+  const area = hectares == null ? '— ha' : `${hectares.toFixed(4)} ha`;
 
-  if (walk.perimeterMetres === null) return area;
+  /*
+    `== null`, which also catches undefined. This build can reach a phone
+    before the verification service that sends these fields reaches its
+    host, and a missing perimeter would otherwise print "NaN m".
+  */
+  if (walk.perimeterMetres == null) return area;
 
   return `${area} · ${Math.round(walk.perimeterMetres)} m perimeter`;
 }
@@ -635,7 +640,7 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
             <Text className="text-text text-xs mt-1">{walk.walkRejection}</Text>
             <Text className="text-text-3 text-xs mt-1">
               {describeArea(walk)} · {walk.pointCount} points
-              {walk.walkDurationSeconds !== null ? ` · ${walk.walkDurationSeconds}s` : ''}
+              {walk.walkDurationSeconds != null ? ` · ${walk.walkDurationSeconds}s` : ''}
             </Text>
           </View>
         )}
@@ -646,12 +651,12 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
             <Text className="text-text font-semibold text-sm mt-1">{describeArea(walk)}</Text>
             <Text className="text-text-3 text-xs mt-1">
               {walk.pointCount} points
-              {walk.walkDurationSeconds !== null ? ` over ${walk.walkDurationSeconds}s` : ''}
+              {walk.walkDurationSeconds != null ? ` over ${walk.walkDurationSeconds}s` : ''}
             </Text>
             {/* Against what the farmer said, when there is something to compare to.
                 Shown whichever way it falls: a farm half the declared size and one
                 twice it are both worth a second look before anybody lends on it. */}
-            {walk.areaDiscrepancyPct !== null && (
+            {walk.areaDiscrepancyPct != null && (
               <Text
                 className={`text-xs mt-1 ${walk.fraudSignals.significantAreaDiscrepancy ? 'text-yellow-500 font-semibold' : 'text-text-3'}`}
               >
