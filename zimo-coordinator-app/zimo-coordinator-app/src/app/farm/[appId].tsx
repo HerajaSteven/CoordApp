@@ -206,7 +206,9 @@ export default function FarmDetailScreen() {
                   value={`${ver.gps.centerLat.toFixed(4)}°N, ${ver.gps.centerLng?.toFixed(4)}°E`}
                 />
               )}
-              {boundary?.areaHectares && (
+              {/* `!= null`, not truthiness: an area of zero is a measurement
+                  and `{0 && …}` renders a bare 0, which throws outside <Text>. */}
+              {boundary?.areaHectares != null && (
                 <InfoRow label="Measured Area" value={`${boundary.areaHectares} ha`} />
               )}
             </Card>
@@ -217,13 +219,38 @@ export default function FarmDetailScreen() {
                 <Text className="font-bold text-text mb-2">Boundary Walk</Text>
                 <Divider className="mb-2" />
                 <InfoRow label="Points" value={String(boundary.pointCount)} />
-                {boundary.areaHectares && <InfoRow label="Area" value={`${boundary.areaHectares} ha`} />}
+                {boundary.areaHectares != null && <InfoRow label="Area" value={`${boundary.areaHectares} ha`} />}
+                {/* An area alone cannot say whether a shape is a farm. A hectare
+                    is a hectare whether it is a square or a sliver, and an
+                    eleven-metre perimeter around four declared hectares is the
+                    plainest statement possible that something is wrong. */}
+                {boundary.perimeterMetres != null && (
+                  <InfoRow label="Perimeter" value={`${Math.round(boundary.perimeterMetres)} m`} />
+                )}
                 {boundary.areaDiscrepancyPct != null && (
                   <InfoRow
                     label="Discrepancy"
                     value={`${boundary.areaDiscrepancyPct.toFixed(1)}%`}
                     style={{ color: Math.abs(boundary.areaDiscrepancyPct) > 20 ? '#EF4444' : undefined }}
                   />
+                )}
+
+                {/*
+                  WHY THIS IS ON THIS SCREEN AND NOT ONLY THE WALK SCREEN.
+                  This is what a reviewer reads when they approve a visit —
+                  days later, off the farm, unable to walk it again. Every
+                  walk on record encloses two to thirty-eight square metres
+                  against farms declared in hectares, and an area printed to
+                  four decimal places reads as a survey. The verdict has to
+                  sit next to the number it disqualifies.
+                */}
+                {boundary.walkRejection && (
+                  <View className="bg-yellow-50 rounded-xl p-3 mt-2">
+                    <Text className="text-yellow-500 font-semibold text-xs">
+                      ⚠️ This walk does not measure the farm
+                    </Text>
+                    <Text className="text-text text-xs mt-1">{boundary.walkRejection}</Text>
+                  </View>
                 )}
               </Card>
             )}

@@ -2,6 +2,7 @@ import { api } from './client';
 import type {
   ApiResponse,
   AuthTokens,
+  ClosedWalk,
   ClusterFarm,
   ClusterListResponse,
   CollectableFarm,
@@ -182,7 +183,7 @@ export const boundaryApi = {
   addPoint: (appId: string, body: { lat: number; lng: number; accuracyMeters: number }) =>
     api.post(`/boundaries/${appId}/points`, body),
   closeWalk: (appId: string, forceReset = false) =>
-    api.post(`/boundaries/${appId}/close`, { forceReset }),
+    api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/close`, { forceReset }),
 };
 
 // ─── Uploads ──────────────────────────────────────────────────────────────────
