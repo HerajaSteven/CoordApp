@@ -31,7 +31,7 @@ import {
   InfoRow,
   HeaderBackButton,
 } from '@/components/ui';
-import type { CategoryFieldDef, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
+import type { CategoryFieldDef, ClosedWalk, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
 import { useStoredFileSource } from '@/features/camera/platformFile';
 import * as Network from 'expo-network';
 
@@ -391,6 +391,30 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
   );
 }
 
+/**
+ * The measurement in one line, in the units a coordinator thinks in.
+ *
+ * Hectares to four places because that is a square metre at this scale,
+ * and a walk that came to nine square metres has to be able to say so —
+ * rounding it to "0.00 ha" would hide exactly the walks worth catching.
+ * Metres for the perimeter, whole, since no GPS fix justifies finer.
+ */
+function describeArea(walk: Pick<ClosedWalk, 'derivedAreaHectares' | 'areaHectares' | 'perimeterMetres'>): string {
+  /* The platform's reading, falling back to the service's own. Not zero if
+     neither is known — "0 ha" is a measurement and "—" is not. */
+  const hectares = walk.derivedAreaHectares ?? walk.areaHectares;
+  const area = hectares == null ? '— ha' : `${hectares.toFixed(4)} ha`;
+
+  /*
+    `== null`, which also catches undefined. This build can reach a phone
+    before the verification service that sends these fields reaches its
+    host, and a missing perimeter would otherwise print "NaN m".
+  */
+  if (walk.perimeterMetres == null) return area;
+
+  return `${area} · ${Math.round(walk.perimeterMetres)} m perimeter`;
+}
+
 // ─── Step: GPS ────────────────────────────────────────────────────────────────
 function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; onNext: () => void }) {
   const { currentLocation, isLocating, isWalking, walkPoints, locateMe, startBoundaryWalk, stopBoundaryWalk } = useGPS();
@@ -399,6 +423,7 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
   const isSuperAdmin = coordinator?.role === 'SuperAdmin';
   const [gpsSaved, setGpsSaved] = useState(false);
   const [boundarySaved, setBoundarySaved] = useState(false);
+  const [walk, setWalk] = useState<ClosedWalk | null>(null);
   const [manualMode, setManualMode] = useState(isSuperAdmin && defaultManualCoordinatesEnabled);
   const [manualLat, setManualLat] = useState('');
   const [manualLng, setManualLng] = useState('');
@@ -492,10 +517,26 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
       for (const pt of walkPoints) {
         await boundaryApi.addPoint(appId, { lat: pt.lat, lng: pt.lng, accuracyMeters: pt.accuracyMeters });
       }
-      await boundaryApi.closeWalk(appId);
+      const { data } = await boundaryApi.closeWalk(appId);
+      const measured = data.data;
+      setWalk(measured);
       setBoundarySaved(true);
       await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
-      Alert.alert('Boundary Saved', `${walkPoints.length} points recorded. Walk closed successfully.`);
+
+      /*
+        What the walk came to, not that it finished. "12 points recorded"
+        is true of a walk around a table, and every walk on record so far
+        is one: a handful of fixes seconds apart enclosing square metres of
+        ground against farms declared in hectares. The coordinator is
+        standing on the farm when this alert appears and can walk it again;
+        an hour later, nobody can.
+      */
+      if (measured.walkRejection) {
+        Alert.alert('Walk saved, but it does not measure the farm', measured.walkRejection
+          + '\n\nThe walk has been kept for review. Walk the perimeter again if you can.');
+      } else {
+        Alert.alert('Boundary Saved', `${describeArea(measured)} from ${measured.pointCount} points.`);
+      }
     } catch {
       Alert.alert('Error', 'Failed to save boundary walk.');
     } finally {
@@ -593,10 +634,45 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
           </View>
         )}
 
-        {boundarySaved && (
+        {boundarySaved && walk?.walkRejection && (
+          <View className="bg-yellow-50 rounded-xl p-3 mb-3">
+            <Text className="text-yellow-500 font-semibold">⚠️ Saved — but not a measurement</Text>
+            <Text className="text-text text-xs mt-1">{walk.walkRejection}</Text>
+            <Text className="text-text-3 text-xs mt-1">
+              {describeArea(walk)} · {walk.pointCount} points
+              {walk.walkDurationSeconds != null ? ` · ${walk.walkDurationSeconds}s` : ''}
+            </Text>
+          </View>
+        )}
+
+        {boundarySaved && walk && !walk.walkRejection && (
           <View className="bg-green-50 rounded-xl p-3 mb-3">
             <Text className="text-green-500 font-semibold">✅ Boundary saved</Text>
-            <Text className="text-text-3 text-xs mt-1">{walkPoints.length} points</Text>
+            <Text className="text-text font-semibold text-sm mt-1">{describeArea(walk)}</Text>
+            <Text className="text-text-3 text-xs mt-1">
+              {walk.pointCount} points
+              {walk.walkDurationSeconds != null ? ` over ${walk.walkDurationSeconds}s` : ''}
+            </Text>
+            {/* Against what the farmer said, when there is something to compare to.
+                Shown whichever way it falls: a farm half the declared size and one
+                twice it are both worth a second look before anybody lends on it. */}
+            {walk.areaDiscrepancyPct != null && (
+              <Text
+                className={`text-xs mt-1 ${walk.fraudSignals.significantAreaDiscrepancy ? 'text-yellow-500 font-semibold' : 'text-text-3'}`}
+              >
+                {walk.areaDiscrepancyPct > 0 ? '+' : ''}
+                {walk.areaDiscrepancyPct.toFixed(1)}% against the size the farmer declared
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* A record saved before the platform could measure it. Says so,
+            rather than showing a reassuring tick it has not earned. */}
+        {boundarySaved && !walk && (
+          <View className="bg-green-50 rounded-xl p-3 mb-3">
+            <Text className="text-green-500 font-semibold">✅ Boundary saved</Text>
+            <Text className="text-text-3 text-xs mt-1">{walkPoints.length} points — not yet measured</Text>
           </View>
         )}
 

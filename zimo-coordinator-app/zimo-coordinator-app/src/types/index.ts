@@ -136,6 +136,13 @@ export interface DynamicCategoryEntry {
 // ─── Boundary ─────────────────────────────────────────────────────────────────
 export interface BoundaryRecord {
   areaHectares: number | null;
+  /* The platform's reading of the same polygon, and why the walk cannot be
+     read as a measurement of a farm — see ClosedWalk below. Null for a walk
+     recorded before the platform checked, so it means "nothing to report",
+     never "verified good". */
+  derivedAreaHectares: number | null;
+  perimeterMetres: number | null;
+  walkRejection: string | null;
   areaDiscrepancyPct: number | null;
   walkDurationSeconds: number | null;
   declaredAreaValue: string | null;
@@ -143,6 +150,35 @@ export interface BoundaryRecord {
   pointCount: number;
   isWalkActive: boolean;
   verifiedAt: string | null;
+}
+
+/**
+ * What closing a walk measured, and whether it can be believed.
+ *
+ * `areaHectares` is the verification service's figure and
+ * `derivedAreaHectares` the platform's reading of the same polygon. Both
+ * arrive on purpose: they agree to four significant figures today, and a
+ * day they do not is a finding about the polygon rather than a number to
+ * pick between.
+ *
+ * `walkRejection` is the sentence to show a coordinator — why this walk
+ * is not a measurement of a farm — or null when the walk stands. Null is
+ * also what a platform that has not yet deployed the check returns, so it
+ * means "nothing to report", never "verified good".
+ */
+export interface ClosedWalk {
+  pointCount: number;
+  areaHectares: number | null;
+  derivedAreaHectares: number | null;
+  perimeterMetres: number | null;
+  areaDiscrepancyPct: number | null;
+  walkDurationSeconds: number | null;
+  walkRejection: string | null;
+  fraudSignals: {
+    implausiblyFastWalk: boolean;
+    significantAreaDiscrepancy: boolean;
+    walkNotBelievable: boolean;
+  };
 }
 
 // ─── Merged Farm Profile ──────────────────────────────────────────────────────
