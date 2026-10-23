@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Text, FACE } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -34,20 +34,7 @@ import {
 import type { CategoryFieldDef, ClosedWalk, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
 import { useStoredFileSource } from '@/features/camera/platformFile';
 import * as Network from 'expo-network';
-
-const STEPS = ['identity', 'farmType', 'gps', 'landOwnership', 'infrastructure', 'capacity', 'evidence', 'review'] as const;
-type Step = (typeof STEPS)[number];
-
-const STEP_LABELS: Record<Step, string> = {
-  identity: 'Identity Verification',
-  farmType: 'Farm Type',
-  gps: 'GPS & Boundary',
-  landOwnership: 'Land Ownership',
-  infrastructure: 'Infrastructure',
-  capacity: 'Capacity',
-  evidence: 'Evidence Photos',
-  review: 'Review & Submit',
-};
+import { STEPS, STEP_LABELS, resumeStep, type Step } from '@/features/verification/steps';
 
 const EVIDENCE_SLOTS = [
   { key: 'ev-entrance', label: 'Farm Entrance', required: true, allTypes: true },
@@ -110,7 +97,7 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
         confidence: 96,
         mismatchReason: mismatch ? mismatchReason || 'Other' : undefined,
       }, unitId);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed to save identity step.');
@@ -317,7 +304,7 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
     setLoading(true);
     try {
       await verificationApi.farmType(appId, selected, declaring, unitId);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       onNext(selected);
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -465,7 +452,7 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
     try {
       await saveGpsPoint(loc.lat, loc.lng, loc.accuracyMeters);
       setGpsSaved(true);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
     } catch {
       setManualMode(true);
       Alert.alert('Error', 'Failed to save GPS coordinates.');
@@ -496,7 +483,7 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
     try {
       await saveGpsPoint(lat, lng, accuracy);
       setGpsSaved(true);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       Alert.alert('Saved', 'Manual coordinates saved successfully.');
     } catch {
       Alert.alert('Error', 'Failed to save manual coordinates.');
@@ -521,7 +508,7 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
       const measured = data.data;
       setWalk(measured);
       setBoundarySaved(true);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
 
       /*
         What the walk came to, not that it finished. "12 points recorded"
@@ -728,7 +715,7 @@ function LandOwnershipStep({ appId, unitId, onNext }: { appId: string; unitId?: 
         ...data,
         docIssueDate: new Date(data.docIssueDate).toISOString(),
       }, unitId);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -839,7 +826,7 @@ function InfrastructureStep({ appId, unitId, onNext }: { appId: string; unitId?:
         storageType: form.storageType,
         storageCapacityTonnes: form.storageCapacityTonnes ? parseFloat(form.storageCapacityTonnes) : undefined,
       }, unitId);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -1117,7 +1104,7 @@ function CapacityStep({ appId, unitId, onNext, farmType, declared, recorded, onE
         crops: showCrops ? payload('crop') : [],
         livestock: showLivestock ? payload('livestock') : [],
       }, unitId);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -1260,7 +1247,7 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
     setSubmitting(true);
     try {
       await verificationApi.evidenceComplete(appId, unitId);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -1344,7 +1331,7 @@ function ReviewStep({ appId, unitId, farmName, onSubmit }: {
     try {
       await verificationApi.certify(appId, unitId);
       await verificationApi.submit(appId, unitId);
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
+      await refreshProgress(qc, appId);
       onSubmit();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed to submit.');
@@ -1385,9 +1372,33 @@ function ReviewStep({ appId, unitId, farmName, onSubmit }: {
   );
 }
 
+/**
+ * Re-reads the saved progress after a step is saved.
+ *
+ * Both, because the two subjects keep it in different places: a farm's
+ * progress arrives on its farm profile, and a cluster — which has no
+ * registration and so no profile — is read from the verification record
+ * directly. Invalidating only the profile left a cluster's step dots and
+ * resume point stale after every save.
+ */
+async function refreshProgress(qc: QueryClient, appId: string) {
+  await Promise.all([
+    qc.invalidateQueries({ queryKey: ['farm-profile', appId] }),
+    qc.invalidateQueries({ queryKey: ['verification-record', appId] }),
+  ]);
+}
+
 // ─── Main Wizard Orchestrator ─────────────────────────────────────────────────
 export default function VerificationWizard() {
-  const { appId, unitId, unitLabel } = useLocalSearchParams<{ appId: string; unitId?: string; unitLabel?: string }>();
+  const { appId, unitId, unitLabel, subjectLabel } = useLocalSearchParams<{
+    appId: string;
+    unitId?: string;
+    unitLabel?: string;
+    /* What the thing is called, for a subject with no registration to read
+       its name from — a cluster. Optional: a deep link without it falls
+       back to the id rather than showing nothing. */
+    subjectLabel?: string;
+  }>();
   const router = useRouter();
   const qc = useQueryClient();
   const coordinator = useAuthStore((s) => s.coordinator);
@@ -1397,18 +1408,60 @@ export default function VerificationWizard() {
     queryKey: ['farm-profile', appId, unitId],
     queryFn: () => farmsApi.profile(appId),
     select: (res) => res.data.data,
+    /*
+      A CLUSTER HAS NO FARM PROFILE, and that is not a failure.
+
+      This wizard verifies clusters too — they are subjects of the same
+      eight steps rather than having a thinner verification of their own.
+      The farm profile is a registration's dossier, so for a cluster it
+      404s, and retrying a 404 three times only holds the screen on a
+      spinner.
+    */
+    retry: (attempt, error) =>
+      (error as { response?: { status?: number } })?.response?.status === 404 ? false : attempt < 2,
   });
 
-  const completedSteps = profile?.verification?.completedSteps ?? [];
-  const farmType = (profile?.verification?.farmTypeSelected ?? 'crop') as 'crop' | 'livestock' | 'mixed';
+  /*
+    The verification record on its own, which answers for BOTH subjects.
+
+    This is what makes the wizard work for a cluster: GET /verifications/:id
+    resolves a farm or a cluster, and for an unstarted one it answers with a
+    blank record rather than a 404. Read only when there is no profile, so a
+    farm verification makes no extra request and cannot show two different
+    answers from two sources.
+  */
+  const {
+    data: recordOnly,
+    isLoading: recordLoading,
+    refetch: refetchRecord,
+  } = useQuery({
+    queryKey: ['verification-record', appId, unitId],
+    queryFn: () => verificationApi.get(appId, unitId),
+    select: (res) => res.data.data,
+    enabled: !isLoading && !profile,
+  });
+
+  /*
+    Everything below reads this, not profile.verification — which is the
+    whole of what the cluster case needed on this screen.
+  */
+  const verification = profile?.verification ?? recordOnly ?? null;
+
+  /* A subject with no registration behind it is a cluster. */
+  const isCluster = !profile && !!recordOnly;
+  const subjectName = profile?.registration.farmName ?? subjectLabel ?? appId;
+  const backHref = isCluster ? `/cluster/${appId}` : `/farm/${appId}`;
+
+  const completedSteps = verification?.completedSteps ?? [];
+  const farmType = (verification?.farmTypeSelected ?? 'crop') as 'crop' | 'livestock' | 'mixed';
   /* Which crops and which livestock, chosen at the farm type step. The
      capacity step asks about these and nothing else. */
-  const declared = profile?.verification?.farmTypeCategories ?? { crop: [], livestock: [] };
+  const declared = verification?.farmTypeCategories ?? { crop: [], livestock: [] };
   const recorded = {
-    crop: profile?.verification?.capacity?.crops ?? [],
-    livestock: profile?.verification?.capacity?.livestock ?? [],
+    crop: verification?.capacity?.crops ?? [],
+    livestock: verification?.capacity?.livestock ?? [],
   };
-  const overallStatus = profile?.verification?.overallStatus;
+  const overallStatus = verification?.overallStatus;
 
   /*
     The step was chosen once, as the screen first rendered. On a fresh
@@ -1421,8 +1474,7 @@ export default function VerificationWizard() {
     chooses one: moving on, tapping a step dot, or being sent back to farm
     type. After that, their choice stands.
   */
-  const firstIncomplete = STEPS.find((s) => !completedSteps.includes(s)) ?? 'review';
-  const resumeAt: Step = completedSteps.length === STEPS.length ? 'review' : firstIncomplete;
+  const resumeAt: Step = resumeStep(completedSteps);
   const [chosenStep, setActiveStep] = useState<Step | null>(null);
   const activeStep: Step = chosenStep ?? resumeAt;
   const stepIndex = STEPS.indexOf(activeStep);
@@ -1459,8 +1511,9 @@ export default function VerificationWizard() {
     try {
       await verificationApi.approve(appId, unitId);
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ['farm-profile', appId] }),
-        qc.invalidateQueries({ queryKey: ['farms'] })
+        refreshProgress(qc, appId),
+        qc.invalidateQueries({ queryKey: ['farms'] }),
+        qc.invalidateQueries({ queryKey: ['clusters'] })
       ]);
       Alert.alert('Verified', 'Farm verification has been approved and marked as verified.', [
         { text: 'OK', onPress: () => router.back() }
@@ -1476,8 +1529,24 @@ export default function VerificationWizard() {
     }
   };
 
-  if (isLoading) return <LoadingSpinner />;
-  if (isError || !profile) return <ErrorMessage message="Could not load farm data." onRetry={refetch} />;
+  if (isLoading || recordLoading) return <LoadingSpinner />;
+
+  /*
+    Neither source answered. A missing profile alone is not a failure any
+    more — that is every cluster — so the refusal waits until the record
+    could not be read either.
+  */
+  if (!verification && (isError || !profile)) {
+    return (
+      <ErrorMessage
+        message="Could not load this verification."
+        onRetry={() => {
+          refetch();
+          refetchRecord();
+        }}
+      />
+    );
+  }
 
   if (overallStatus === 'submitted' || overallStatus === 'approved') {
     const isSuperAdmin = coordinator?.role === 'SuperAdmin';
@@ -1489,7 +1558,7 @@ export default function VerificationWizard() {
             title: 'Verification',
             headerStyle: { backgroundColor: '#0D7A3D' },
             headerTintColor: '#fff',
-            headerLeft: () => <HeaderBackButton fallbackHref={`/farm/${appId}`} />
+            headerLeft: () => <HeaderBackButton fallbackHref={backHref} />
           }}
         />
         <Text className="text-5xl mb-4">🏆</Text>
@@ -1520,11 +1589,11 @@ export default function VerificationWizard() {
       <Stack.Screen
         options={{
           headerShown: true,
-          title: unitLabel ? `${unitLabel}` : 'Verification',
+          title: unitLabel ? `${unitLabel}` : isCluster ? subjectName : 'Verification',
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontFamily: FACE.bold, color: '#fff' },
-          headerLeft: () => <HeaderBackButton fallbackHref={`/farm/${appId}`} />,
+          headerLeft: () => <HeaderBackButton fallbackHref={backHref} />,
         }}
       />
 
@@ -1564,7 +1633,7 @@ export default function VerificationWizard() {
             appId={appId}
             unitId={unitId}
             onNext={() => { goToNext(); }}
-            currentFarmType={profile.verification?.farmTypeSelected ?? null}
+            currentFarmType={verification?.farmTypeSelected ?? null}
             declared={declared}
           />
         )}
@@ -1595,7 +1664,7 @@ export default function VerificationWizard() {
           <EvidenceStep appId={appId} unitId={unitId} onNext={goToNext} farmType={farmType} />
         )}
         {activeStep === 'review' && (
-          <ReviewStep appId={appId} unitId={unitId} farmName={profile.registration.farmName} onSubmit={handleSubmitSuccess} />
+          <ReviewStep appId={appId} unitId={unitId} farmName={subjectName} onSubmit={handleSubmitSuccess} />
         )}
       </ScrollView>
     </View>

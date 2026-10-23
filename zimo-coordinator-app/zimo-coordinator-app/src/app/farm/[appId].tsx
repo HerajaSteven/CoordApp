@@ -24,32 +24,9 @@ import {
   HeaderBackButton,
 } from '@/components/ui';
 import { EvidenceGallery } from '@/components/EvidenceGallery';
+import { VerificationProgress } from '@/components/VerificationProgress';
+import { STEPS } from '@/features/verification/steps';
 import type { TimelineEvent } from '@/types';
-
-function StepRow({ step, completed }: { step: string; completed: boolean }) {
-  const labels: Record<string, string> = {
-    identity: 'Identity Verification',
-    farmType: 'Farm Type',
-    gps: 'GPS Verification',
-    landOwnership: 'Land Ownership',
-    infrastructure: 'Infrastructure',
-    capacity: 'Capacity Assessment',
-    evidence: 'Evidence Collection',
-    review: 'Review & Certify',
-  };
-  return (
-    <View className="flex-row items-center py-2.5 border-b border-border">
-      <View className={`w-6 h-6 rounded-full items-center justify-center mr-3 ${completed ? 'bg-green-500' : 'bg-gray-100'}`}>
-        <Text className={`text-xs font-bold ${completed ? 'text-white' : 'text-text-3'}`}>
-          {completed ? '✓' : '○'}
-        </Text>
-      </View>
-      <Text className={`text-sm ${completed ? 'text-text font-medium' : 'text-text-3'}`}>
-        {labels[step] ?? step}
-      </Text>
-    </View>
-  );
-}
 
 function TimelineItem({ event }: { event: TimelineEvent }) {
   const icons: Record<string, string> = {
@@ -78,8 +55,6 @@ function TimelineItem({ event }: { event: TimelineEvent }) {
     </View>
   );
 }
-
-const STEPS = ['identity', 'farmType', 'gps', 'landOwnership', 'infrastructure', 'capacity', 'evidence', 'review'];
 
 export default function FarmDetailScreen() {
   const { appId } = useLocalSearchParams<{ appId: string }>();
@@ -332,15 +307,7 @@ export default function FarmDetailScreen() {
           <View>
             <Card className="mb-4">
               <Text className="font-bold text-text mb-1">Verification Wizard</Text>
-              <Text className="text-xs text-text-3 mb-3">
-                {completedSteps.length} of {STEPS.length} steps completed
-              </Text>
-              <ProgressBar value={completedSteps.length} max={STEPS.length} />
-              <View className="mt-4">
-                {STEPS.map((step) => (
-                  <StepRow key={step} step={step} completed={completedSteps.includes(step as never)} />
-                ))}
-              </View>
+              <VerificationProgress completedSteps={completedSteps} />
             </Card>
 
             {ver?.identity && (

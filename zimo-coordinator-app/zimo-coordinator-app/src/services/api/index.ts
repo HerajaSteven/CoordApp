@@ -19,7 +19,6 @@ import type {
   PaginatedResponse,
   TimelineEvent,
   VerificationRecord,
-  VerifyClusterInput,
 } from '@/types';
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -275,8 +274,6 @@ export const clustersApi = {
   list: () => api.get<ApiResponse<ClusterListResponse>>('/clusters'),
   get: (clusterId: string) =>
     api.get<ApiResponse<{ cluster: ClusterFarm; assignment: unknown }>>(`/clusters/${clusterId}`),
-  verify: (clusterId: string, body: VerifyClusterInput) =>
-    api.post<ApiResponse<ClusterFarm>>(`/clusters/${clusterId}/verify`, body),
 };
 
 // ─── Farm Units (ponds, plots, etc. within a site) ────────────────────────────

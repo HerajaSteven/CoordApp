@@ -1,22 +1,12 @@
-import React, { useState } from 'react';
-import {
-  View,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  RefreshControl,
-  Image,
-  ActivityIndicator,
-} from 'react-native';
+import React from 'react';
+import { View, ScrollView, TouchableOpacity, Alert, RefreshControl, Image } from 'react-native';
 import { Text, FACE } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { clustersApi, uploadsApi } from '@/services/api';
-import { useGPS } from '@/features/gps/useGPS';
-import { useCamera, type CapturedPhoto } from '@/features/camera/useCamera';
-import { storedFileUrl, uploadCapturedFile } from '@/features/camera/platformFile';
-import { Card, Button, Input, LoadingSpinner, ErrorMessage, HeaderBackButton } from '@/components/ui';
-import { getErrorMessage } from '@/utils/errors';
+import { useQuery } from '@tanstack/react-query';
+import { clustersApi, verificationApi } from '@/services/api';
+import { Card, LoadingSpinner, ErrorMessage, HeaderBackButton } from '@/components/ui';
+import { VerificationProgress } from '@/components/VerificationProgress';
+import { STEPS } from '@/features/verification/steps';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   pending:     { label: 'Pending',     color: '#8896A7', bg: '#F5F7FA' },
@@ -25,58 +15,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   flagged:     { label: 'Flagged',     color: '#EF4444', bg: '#FEF2F2' },
 };
 
-interface UploadedPhotoState {
-  localUri: string;
-  remoteUrl?: string;
-}
-
-function PhotoCaptureButton({
-  label,
-  photo,
-  uploading,
-  onCapture,
-}: {
-  label: string;
-  photo: UploadedPhotoState | null;
-  uploading: boolean;
-  onCapture: () => void;
-}) {
-  return (
-    <View className="mb-3">
-      <Text className="text-sm font-medium text-text mb-1.5">{label}</Text>
-      <TouchableOpacity
-        onPress={onCapture}
-        className={`h-28 rounded-xl overflow-hidden items-center justify-center border-2 border-dashed ${
-          photo ? 'border-green-500' : 'border-border'
-        }`}
-      >
-        {uploading ? (
-          <ActivityIndicator color="#0D7A3D" />
-        ) : photo ? (
-          <Image source={{ uri: photo.localUri }} className="w-full h-full" resizeMode="cover" />
-        ) : (
-          <View className="items-center">
-            <Text className="text-2xl">📷</Text>
-            <Text className="text-xs text-text-3 mt-1">Tap to capture</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 export default function ClusterDetailScreen() {
   const { clusterId } = useLocalSearchParams<{ clusterId: string }>();
   const router = useRouter();
-  const qc = useQueryClient();
-  const { currentLocation, isLocating, locateMe } = useGPS();
-  const { takePhoto } = useCamera(clusterId);
-
-  const [entrancePhoto, setEntrancePhoto] = useState<UploadedPhotoState | null>(null);
-  const [overviewPhoto, setOverviewPhoto] = useState<UploadedPhotoState | null>(null);
-  const [uploadingSlot, setUploadingSlot] = useState<'entrance' | 'overview' | null>(null);
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['cluster', clusterId],
@@ -84,68 +25,54 @@ export default function ClusterDetailScreen() {
     select: (res) => res.data.data,
   });
 
-  const cluster = data?.cluster;
-
   /*
-    Cluster photos are not tied to a farm application, so there is no
-    confirm call. They are stored the same way as every other photo (see
-    platformFile.ts), and the cluster keeps the address they are shown from.
-    The old Cloudinary upload was refused, like every other photo.
+    The same verification record a farm has.
+
+    This screen used to carry a verification of its own: a GPS pin, two
+    optional photos and a note, submitted in one go. It asked nothing about
+    farm type, land ownership, infrastructure or capacity, it had no
+    boundary walk, and because it posted only at the end, a coordinator who
+    ran out of daylight came back to an empty form.
+
+    A cluster is a subject of the eight-step verification now, so the record
+    is read from the same endpoint a farm's is and the wizard is the same
+    wizard. Every step saves on its own, which is what makes a half-finished
+    visit resumable.
   */
-  const uploadToCloudinary = async (photo: CapturedPhoto): Promise<string | null> => {
-    const fileId = await uploadCapturedFile(photo);
-    return storedFileUrl(fileId);
-  };
-
-  const handleCapturePhoto = async (slot: 'entrance' | 'overview') => {
-    const photo = await takePhoto(slot);
-    if (!photo) return;
-    setUploadingSlot(slot);
-    try {
-      const url = await uploadToCloudinary(photo);
-      if (url) {
-        const next = { localUri: photo.localUri, remoteUrl: url };
-        if (slot === 'entrance') setEntrancePhoto(next);
-        else setOverviewPhoto(next);
-      }
-    } catch (err) {
-      Alert.alert('Upload Failed', getErrorMessage(err));
-    } finally {
-      setUploadingSlot(null);
-    }
-  };
-
-  const submit = async () => {
-    if (!currentLocation) {
-      Alert.alert('GPS Required', 'Capture GPS location before submitting verification.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await clustersApi.verify(clusterId, {
-        gpsLat: currentLocation.lat,
-        gpsLng: currentLocation.lng,
-        accuracyMeters: currentLocation.accuracyMeters,
-        coordinatorNotes: notes || undefined,
-        entrancePhotoUrl: entrancePhoto?.remoteUrl,
-        overviewPhotoUrl: overviewPhoto?.remoteUrl,
-      });
-      await qc.invalidateQueries({ queryKey: ['cluster', clusterId] });
-      await qc.invalidateQueries({ queryKey: ['clusters'] });
-      router.back();
-    } catch (err) {
-      Alert.alert('Error', getErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const { data: verification } = useQuery({
+    queryKey: ['verification-record', clusterId, undefined],
+    queryFn: () => verificationApi.get(clusterId),
+    select: (res) => res.data.data,
+  });
 
   if (isLoading) return <LoadingSpinner />;
-  if (isError || !cluster) return <ErrorMessage message="Could not load cluster farm." onRetry={refetch} />;
+  if (isError || !data?.cluster) return <ErrorMessage message="Could not load cluster farm." onRetry={refetch} />;
 
+  const cluster = data.cluster;
   const status = STATUS_CONFIG[cluster.status] ?? STATUS_CONFIG.pending;
-  const isVerified = cluster.status === 'verified';
   const memberFarms = cluster.memberFarms ?? [];
+
+  const completedSteps = verification?.completedSteps ?? [];
+  const overallStatus = verification?.overallStatus;
+  const underReview = overallStatus === 'submitted' || overallStatus === 'approved';
+  /*
+    A cluster verified before the eight steps existed, whose GPS pin and two
+    photos are the only record of that visit.
+  */
+  const legacy = cluster.verification ?? null;
+  const legacyOnly = cluster.status === 'verified' && completedSteps.length === 0;
+
+  const openWizard = () => {
+    if (underReview) {
+      Alert.alert(
+        'Already submitted',
+        'This verification has been submitted. It can’t be changed while it is being reviewed.'
+      );
+      return;
+    }
+
+    router.push(`/verification/${clusterId}?subjectLabel=${encodeURIComponent(cluster.label)}`);
+  };
 
   return (
     <View className="flex-1 bg-bg">
@@ -197,34 +124,44 @@ export default function ClusterDetailScreen() {
           )}
         </Card>
 
-        {isVerified ? (
+        {!legacyOnly && (
+          <Card className="mb-4">
+            <Text className="font-bold text-text mb-1">Field Verification</Text>
+            <VerificationProgress completedSteps={completedSteps} />
+          </Card>
+        )}
+
+        {/*
+          Kept for the clusters verified under the old one-shot form — their
+          GPS pin and two photos are the only record of that visit, and
+          dropping the display would lose it.
+        */}
+        {legacyOnly && (
           <Card className="mb-4 bg-green-50 border border-green-100">
             <Text className="font-bold text-green-500 mb-3">✅ Verified</Text>
-            {cluster.verification.gpsLat != null && cluster.verification.gpsLng != null && (
+            {legacy?.gpsLat != null && legacy.gpsLng != null && (
               <Text className="text-xs text-text-3 font-mono mb-3">
-                {cluster.verification.gpsLat.toFixed(6)}°N, {cluster.verification.gpsLng.toFixed(6)}°E
-                {cluster.verification.accuracyMeters != null
-                  ? ` (±${Math.round(cluster.verification.accuracyMeters)}m)`
-                  : ''}
+                {legacy.gpsLat.toFixed(6)}°N, {legacy.gpsLng.toFixed(6)}°E
+                {legacy?.accuracyMeters != null ? ` (±${Math.round(legacy.accuracyMeters)}m)` : ''}
               </Text>
             )}
-            {(cluster.verification.entrancePhotoUrl || cluster.verification.overviewPhotoUrl) && (
+            {(legacy?.entrancePhotoUrl || legacy?.overviewPhotoUrl) && (
               <View className="flex-row gap-3 mb-3">
-                {cluster.verification.entrancePhotoUrl && (
+                {legacy?.entrancePhotoUrl && (
                   <View className="flex-1">
                     <Text className="text-xs text-text-3 mb-1">Entrance</Text>
                     <Image
-                      source={{ uri: cluster.verification.entrancePhotoUrl }}
+                      source={{ uri: legacy.entrancePhotoUrl }}
                       className="w-full h-24 rounded-xl"
                       resizeMode="cover"
                     />
                   </View>
                 )}
-                {cluster.verification.overviewPhotoUrl && (
+                {legacy?.overviewPhotoUrl && (
                   <View className="flex-1">
                     <Text className="text-xs text-text-3 mb-1">Overview</Text>
                     <Image
-                      source={{ uri: cluster.verification.overviewPhotoUrl }}
+                      source={{ uri: legacy.overviewPhotoUrl }}
                       className="w-full h-24 rounded-xl"
                       resizeMode="cover"
                     />
@@ -232,13 +169,13 @@ export default function ClusterDetailScreen() {
                 )}
               </View>
             )}
-            {cluster.verification.coordinatorNotes && (
-              <Text className="text-sm text-text-3 mb-2">&ldquo;{cluster.verification.coordinatorNotes}&rdquo;</Text>
+            {legacy?.coordinatorNotes && (
+              <Text className="text-sm text-text-3 mb-2">&ldquo;{legacy.coordinatorNotes}&rdquo;</Text>
             )}
-            {cluster.verification.verifiedAt && (
+            {legacy?.verifiedAt && (
               <Text className="text-xs text-text-3">
                 Verified{' '}
-                {new Date(cluster.verification.verifiedAt).toLocaleDateString('en-GB', {
+                {new Date(legacy.verifiedAt).toLocaleDateString('en-GB', {
                   day: '2-digit',
                   month: 'long',
                   year: 'numeric',
@@ -246,68 +183,25 @@ export default function ClusterDetailScreen() {
               </Text>
             )}
           </Card>
-        ) : (
-          <>
-            <Card className="mb-4">
-              <Text className="font-bold text-text mb-3">GPS Location</Text>
-              {currentLocation ? (
-                <View className="bg-green-50 rounded-xl p-3 mb-3">
-                  <Text className="text-green-500 font-semibold text-sm">📍 Location captured</Text>
-                  <Text className="text-xs text-text-3 font-mono mt-1">
-                    {currentLocation.lat.toFixed(6)}°N, {currentLocation.lng.toFixed(6)}°E
-                  </Text>
-                </View>
-              ) : (
-                <Text className="text-text-3 text-sm mb-3">
-                  Stand at the cluster entrance and capture GPS. This is required before submitting.
-                </Text>
-              )}
-              <Button
-                label={isLocating ? 'Locating...' : 'Capture GPS'}
-                onPress={locateMe}
-                loading={isLocating}
-                variant="secondary"
-                fullWidth
-              />
-            </Card>
-
-            <Card className="mb-4">
-              <Text className="font-bold text-text mb-3">Verification Photos (optional)</Text>
-              <PhotoCaptureButton
-                label="Entrance Photo"
-                photo={entrancePhoto}
-                uploading={uploadingSlot === 'entrance'}
-                onCapture={() => handleCapturePhoto('entrance')}
-              />
-              <PhotoCaptureButton
-                label="Overview Photo"
-                photo={overviewPhoto}
-                uploading={uploadingSlot === 'overview'}
-                onCapture={() => handleCapturePhoto('overview')}
-              />
-            </Card>
-
-            <Card className="mb-6">
-              <Input
-                label="Notes (optional)"
-                placeholder="Observations, access instructions..."
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-              />
-            </Card>
-
-            <Button
-              label={submitting ? 'Submitting...' : 'Submit Verification'}
-              onPress={submit}
-              loading={submitting}
-              disabled={!currentLocation || submitting}
-              fullWidth
-            />
-          </>
         )}
+
+        <TouchableOpacity
+          onPress={openWizard}
+          className={`rounded-2xl p-4 items-center ${underReview ? 'bg-gray-300' : 'bg-green-500'}`}
+          activeOpacity={0.85}
+        >
+          <Text className={`font-bold text-base ${underReview ? 'text-text-3' : 'text-white'}`}>
+            {overallStatus === 'approved'
+              ? 'Verification Approved'
+              : overallStatus === 'submitted'
+                ? 'Submitted: Waiting for Review'
+                : completedSteps.length === 0
+                  ? legacyOnly
+                    ? 'Re-verify With Full Checklist'
+                    : 'Start Verification'
+                  : `Continue Verification (${completedSteps.length} of ${STEPS.length} done)`}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );

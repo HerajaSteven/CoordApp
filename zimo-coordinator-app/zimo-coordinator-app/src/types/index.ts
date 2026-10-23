@@ -438,15 +438,6 @@ export interface ClusterListResponse {
   };
 }
 
-export interface VerifyClusterInput {
-  gpsLat: number;
-  gpsLng: number;
-  accuracyMeters: number;
-  coordinatorNotes?: string;
-  entrancePhotoUrl?: string;
-  overviewPhotoUrl?: string;
-}
-
 // ─── Pagination ───────────────────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   items: T[];
