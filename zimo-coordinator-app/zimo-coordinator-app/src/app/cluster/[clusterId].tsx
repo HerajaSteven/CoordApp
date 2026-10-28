@@ -107,38 +107,42 @@ export default function ClusterDetailScreen() {
           )}
         </Card>
 
-        <Card className="mb-4">
-          <Text className="font-bold text-text mb-3">Member Farms ({memberFarms.length})</Text>
-          {memberFarms.length === 0 ? (
-            <Text className="text-text-3 text-sm">No member farms listed.</Text>
-          ) : (
-            memberFarms.map((m, idx) => (
-              <View
-                key={`${m.name}-${idx}`}
-                className={`py-2.5 ${idx < memberFarms.length - 1 ? 'border-b border-border' : ''}`}
-              >
-                <Text className="text-sm font-medium text-text">{m.name}</Text>
-                <Text className="text-xs text-text-3 mt-0.5">{m.farmerName} · {m.size}</Text>
-              </View>
-            ))
-          )}
-        </Card>
+        {/*
+          ALWAYS SHOWN, INCLUDING FOR A CLUSTER ALREADY VERIFIED.
 
-        {!legacyOnly && (
-          <Card className="mb-4">
-            <Text className="font-bold text-text mb-1">Field Verification</Text>
-            <VerificationProgress completedSteps={completedSteps} />
-          </Card>
-        )}
+          This used to be hidden whenever the old one-shot form had marked a
+          cluster verified, which left that screen looking exactly like the
+          incomplete page it replaced: a GPS pin, two photos, and no sign
+          anywhere that an eight-step checklist existed. The only way in was
+          the wording on a button below the member list, which is not a
+          thing anybody finds.
+
+          A cluster verified under the old form has met none of the eight
+          steps, and that is worth showing rather than hiding — it is the
+          difference between "checked" and "checked the way we check now".
+        */}
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Field Verification</Text>
+          {legacyOnly && (
+            <Text className="text-xs text-text-3 mb-2">
+              Verified before the full checklist existed. None of the eight steps has been done.
+            </Text>
+          )}
+          <VerificationProgress completedSteps={completedSteps} />
+        </Card>
 
         {/*
           Kept for the clusters verified under the old one-shot form — their
           GPS pin and two photos are the only record of that visit, and
-          dropping the display would lose it.
+          dropping the display would lose it. It sits BELOW the checklist
+          now and says what it is: an earlier visit, not the current state.
         */}
         {legacyOnly && (
           <Card className="mb-4 bg-green-50 border border-green-100">
-            <Text className="font-bold text-green-500 mb-3">✅ Verified</Text>
+            <Text className="font-bold text-green-500 mb-1">Earlier visit</Text>
+            <Text className="text-xs text-text-3 mb-3">
+              What the one-shot form recorded before the checklist replaced it.
+            </Text>
             {legacy?.gpsLat != null && legacy.gpsLng != null && (
               <Text className="text-xs text-text-3 font-mono mb-3">
                 {legacy.gpsLat.toFixed(6)}°N, {legacy.gpsLng.toFixed(6)}°E
@@ -184,6 +188,23 @@ export default function ClusterDetailScreen() {
             )}
           </Card>
         )}
+
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-3">Member Farms ({memberFarms.length})</Text>
+          {memberFarms.length === 0 ? (
+            <Text className="text-text-3 text-sm">No member farms listed.</Text>
+          ) : (
+            memberFarms.map((m, idx) => (
+              <View
+                key={`${m.name}-${idx}`}
+                className={`py-2.5 ${idx < memberFarms.length - 1 ? 'border-b border-border' : ''}`}
+              >
+                <Text className="text-sm font-medium text-text">{m.name}</Text>
+                <Text className="text-xs text-text-3 mt-0.5">{m.farmerName} · {m.size}</Text>
+              </View>
+            ))
+          )}
+        </Card>
 
         <TouchableOpacity
           onPress={openWizard}
