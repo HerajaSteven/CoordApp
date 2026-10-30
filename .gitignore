@@ -1,7 +1,3 @@
-branch_structure.json
-temp_auto_push.bat
-temp_interactive_push.bat
-
 # Built binaries, fetched from EAS for distribution.
 #
 # 196MB of APK and AAB sat here untracked and unignored, one `git add .`
@@ -11,3 +7,7 @@ temp_interactive_push.bat
 android-builds/
 *.apk
 *.aab
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
