@@ -31,7 +31,7 @@ import {
   InfoRow,
   HeaderBackButton,
 } from '@/components/ui';
-import type { CategoryFieldDef, ClosedWalk, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
+import type { BoundaryRecord, CategoryFieldDef, ClosedWalk, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
 import { useStoredFileSource } from '@/features/camera/platformFile';
 import * as Network from 'expo-network';
 import { STEPS, STEP_LABELS, resumeStep, type Step } from '@/features/verification/steps';
@@ -386,6 +386,16 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
  * rounding it to "0.00 ha" would hide exactly the walks worth catching.
  * Metres for the perimeter, whole, since no GPS fix justifies finer.
  */
+/**
+ * A walk this screen can show, however it arrived.
+ *
+ * Closing a walk returns a ClosedWalk; reading one already on record
+ * returns a BoundaryRecord. They carry the same measurements, and the
+ * difference that matters is that only the first has `fraudSignals` —
+ * which is why every read of it here is optional.
+ */
+type HydratedWalk = ClosedWalk | BoundaryRecord;
+
 function describeArea(walk: Pick<ClosedWalk, 'derivedAreaHectares' | 'areaHectares' | 'perimeterMetres'>): string {
   /* The platform's reading, falling back to the service's own. Not zero if
      neither is known — "0 ha" is a measurement and "—" is not. */
@@ -403,14 +413,73 @@ function describeArea(walk: Pick<ClosedWalk, 'derivedAreaHectares' | 'areaHectar
 }
 
 // ─── Step: GPS ────────────────────────────────────────────────────────────────
-function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; onNext: () => void }) {
+function GPSStep({
+  appId,
+  unitId,
+  onNext,
+  completedSteps,
+}: {
+  appId: string;
+  unitId?: string;
+  onNext: () => void;
+  completedSteps: readonly string[];
+}) {
   const { currentLocation, isLocating, isWalking, walkPoints, locateMe, startBoundaryWalk, stopBoundaryWalk } = useGPS();
   const coordinator = useAuthStore((s) => s.coordinator);
   const defaultManualCoordinatesEnabled = useSettingsStore((s) => s.superAdminManualCoordinatesEnabled);
   const isSuperAdmin = coordinator?.role === 'SuperAdmin';
-  const [gpsSaved, setGpsSaved] = useState(false);
+
+  /*
+    Both of these start from what the platform already knows, not from
+    false.
+
+    This screen is reachable by tapping its step dot, so a coordinator who
+    captured the centre point and came back to walk the boundary mounted it
+    fresh: `gpsSaved` was false, Continue was disabled by it, and the walk
+    they had just saved did not appear. The work was on the server the
+    whole time — the screen was the only thing that had forgotten.
+
+    Every other step is told what has been done. Identity is handed
+    `completedSteps`; this one was not.
+  */
+  const [gpsSaved, setGpsSaved] = useState(() => completedSteps.includes('gps'));
   const [boundarySaved, setBoundarySaved] = useState(false);
-  const [walk, setWalk] = useState<ClosedWalk | null>(null);
+  const [walk, setWalk] = useState<HydratedWalk | null>(null);
+
+  /*
+    The walk already on record, if there is one.
+
+    Only once — `walkPlaceholder` is replaced by the real response the
+    moment a new walk closes, and refetching over a fresh measurement
+    would show the coordinator the old one.
+  */
+  const existingBoundary = useQuery({
+    queryKey: ['boundary', appId],
+    queryFn: async () => (await boundaryApi.get(appId)).data?.data as BoundaryRecord | undefined,
+    staleTime: Infinity,
+  });
+
+  React.useEffect(() => {
+    const record = existingBoundary.data;
+
+    /*
+      A walk that is still open is not a result. `isWalkActive` means
+      somebody started one and never closed it, so there is no area to
+      show and the coordinator should walk it again rather than be told
+      a half-finished attempt is their boundary.
+    */
+    if (!record || record.isWalkActive || record.pointCount < 3) {
+      return;
+    }
+
+    /*
+      Never over a walk already in hand. A walk closed in this session is
+      the newer truth, and the cached record is what the server held
+      before it.
+    */
+    setWalk((current) => current ?? record);
+    setBoundarySaved(true);
+  }, [existingBoundary.data]);
   const [manualMode, setManualMode] = useState(isSuperAdmin && defaultManualCoordinatesEnabled);
   const [manualLat, setManualLat] = useState('');
   const [manualLng, setManualLng] = useState('');
@@ -645,7 +714,7 @@ function GPSStep({ appId, unitId, onNext }: { appId: string; unitId?: string; on
                 twice it are both worth a second look before anybody lends on it. */}
             {walk.areaDiscrepancyPct != null && (
               <Text
-                className={`text-xs mt-1 ${walk.fraudSignals.significantAreaDiscrepancy ? 'text-yellow-500 font-semibold' : 'text-text-3'}`}
+                className={`text-xs mt-1 ${("fraudSignals" in walk && walk.fraudSignals.significantAreaDiscrepancy) ? 'text-yellow-500 font-semibold' : 'text-text-3'}`}
               >
                 {walk.areaDiscrepancyPct > 0 ? '+' : ''}
                 {walk.areaDiscrepancyPct.toFixed(1)}% against the size the farmer declared
@@ -1385,6 +1454,13 @@ async function refreshProgress(qc: QueryClient, appId: string) {
   await Promise.all([
     qc.invalidateQueries({ queryKey: ['farm-profile', appId] }),
     qc.invalidateQueries({ queryKey: ['verification-record', appId] }),
+    /*
+      The boundary too, because the GPS step now reads it back to show a
+      walk already on record. It is cached indefinitely — a walk does not
+      change on its own — so without this a coordinator who closed a walk
+      and came back to the step would be shown the record from before it.
+    */
+    qc.invalidateQueries({ queryKey: ['boundary', appId] }),
   ]);
 }
 
@@ -1638,7 +1714,7 @@ export default function VerificationWizard() {
           />
         )}
         {activeStep === 'gps' && (
-          <GPSStep appId={appId} unitId={unitId} onNext={goToNext} />
+          <GPSStep appId={appId} unitId={unitId} onNext={goToNext} completedSteps={completedSteps} />
         )}
         {activeStep === 'landOwnership' && (
           <LandOwnershipStep appId={appId} unitId={unitId} onNext={goToNext} />
