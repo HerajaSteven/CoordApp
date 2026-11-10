@@ -15,6 +15,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { farmsApi, verificationApi, boundaryApi, categoriesApi, uploadsApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
+import { getErrorMessage } from '@/utils/errors';
 import { useCamera } from '@/features/camera/useCamera';
 import { useOfflineStore } from '@/store/offline.store';
 import { useAuthStore } from '@/store/auth.store';
@@ -569,6 +570,29 @@ function GPSStep({
     }
     setLoading(true);
     try {
+      /*
+        A WALK THE SERVER STILL HOLDS OPEN IS CLEARED FIRST, and only here.
+
+        `start` refuses while a walk is active. So the first failure — one
+        dropped request in the middle of fifty-odd points — left the lock
+        set, and every retry after it failed on the lock instead, with a
+        different message each time. The `catch` below printed one
+        sentence over all of them, so the coordinator saw "failed to save"
+        forever with no way out: the app's only path to a walk starts by
+        starting one. Two walks sat open on the server like that, 54
+        points and 14 points recorded, neither with an area.
+
+        Resetting is safe at this line and nowhere else, because we hold a
+        complete walk of our own — checked above — and are about to send
+        it. That is also why it is not offered as a button: `forceReset`
+        discards the server's points, and pressing it with nothing to put
+        in their place would throw away the walk somebody just did.
+      */
+      const open = await boundaryApi.get(appId).catch(() => null);
+      if (open?.data?.data?.isWalkActive) {
+        await boundaryApi.closeWalk(appId, true);
+      }
+
       await boundaryApi.startWalk(appId);
       for (const pt of walkPoints) {
         await boundaryApi.addPoint(appId, { lat: pt.lat, lng: pt.lng, accuracyMeters: pt.accuracyMeters });
@@ -593,8 +617,16 @@ function GPSStep({
       } else {
         Alert.alert('Boundary Saved', `${describeArea(measured)} from ${measured.pointCount} points.`);
       }
-    } catch {
-      Alert.alert('Error', 'Failed to save boundary walk.');
+    } catch (err: unknown) {
+      /*
+        The server's own sentence, not ours. Every refusal on this path
+        says something a coordinator can act on — the centre point is not
+        verified yet, a walk is already open, three points are needed —
+        and the bare `catch` that used to be here replaced all of them
+        with "Failed to save boundary walk," which says only that
+        something went wrong. A whole day was spent not knowing which.
+      */
+      Alert.alert('Could not save the walk', getErrorMessage(err, 'Failed to save boundary walk.'));
     } finally {
       setLoading(false);
     }
