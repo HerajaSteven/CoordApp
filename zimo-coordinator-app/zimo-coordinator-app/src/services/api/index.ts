@@ -176,13 +176,67 @@ export const verificationApi = {
 };
 
 // ─── Boundaries ───────────────────────────────────────────────────────────────
+/**
+ * Which unit a boundary call is about.
+ *
+ * EVERY CALL HERE USED TO OMIT IT, and the server reads it off the query
+ * string on all five routes. So a walk recorded against a pond or a plot
+ * went to the farm's own boundary instead: walking the second unit
+ * overwrote the first, and every unit's screen showed the farm's walk as
+ * though it were its own.
+ *
+ * Three states, which the platform relies on. A named unit is that unit.
+ * An empty string is the farm taken as a whole — and it must be sent as
+ * `?unitId=`, present and empty, because a farm walked whole stores an
+ * empty unit id rather than null. Omitted entirely means "whichever walk
+ * this farm has", which is the right question only when nobody has said
+ * which unit they mean.
+ */
+function unitQuery(unitId?: string): string {
+  return unitId === undefined ? '' : `?unitId=${encodeURIComponent(unitId)}`;
+}
+
 export const boundaryApi = {
-  get: (appId: string) => api.get(`/boundaries/${appId}`),
-  startWalk: (appId: string) => api.post(`/boundaries/${appId}/start`),
-  addPoint: (appId: string, body: { lat: number; lng: number; accuracyMeters: number }) =>
-    api.post(`/boundaries/${appId}/points`, body),
-  closeWalk: (appId: string, forceReset = false) =>
-    api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/close`, { forceReset }),
+  get: (appId: string, unitId?: string) => api.get(`/boundaries/${appId}${unitQuery(unitId)}`),
+  startWalk: (appId: string, unitId?: string) =>
+    api.post(`/boundaries/${appId}/start${unitQuery(unitId)}`),
+  pauseWalk: (appId: string, unitId?: string) => api.post<ApiResponse<{ pointCount: number; isWalkActive: boolean; hasPolygon: boolean }>>(
+    `/boundaries/${appId}/pause${unitQuery(unitId)}`
+  ),
+  /*
+    `capturedAt` is when the receiver took the fix, and leaving it out was
+    a real loss of data. `useGPS` has always recorded it — the GPS gives
+    it with every reading — and this body dropped it, so the server
+    stamped each point when the request landed. The walk duration then
+    measured the upload: one boundary stored 4 km of ground covered in
+    34 seconds, and the anti-fraud rule passed it.
+  */
+  addPoint: (
+    appId: string,
+    body: { lat: number; lng: number; accuracyMeters: number; capturedAt?: string },
+    unitId?: string
+  ) => api.post(`/boundaries/${appId}/points${unitQuery(unitId)}`, body),
+  closeWalk: (appId: string, forceReset = false, unitId?: string) =>
+    api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/close${unitQuery(unitId)}`, { forceReset }),
+
+  /**
+   * THE WHOLE WALK, IN ONE REQUEST. Use this, not the three calls above.
+   *
+   * `startWalk` + one `addPoint` per fix + `closeWalk` is 502 sequential
+   * requests for a 500-point walk, and they go over the worst connection
+   * in the system. A 500-point walk of Ogun-osun 65 put 52 points on the
+   * server in 37 seconds and then stopped — request 53 hit the client's
+   * 15-second timeout and some 450 points were never sent. At the 710 ms
+   * per request that link managed, the full walk needed six uninterrupted
+   * minutes.
+   *
+   * It also leaves no lock behind, because there is no `start`.
+   */
+  saveWalk: (
+    appId: string,
+    points: Array<{ lat: number; lng: number; accuracyMeters: number; capturedAt: string ; bridged?: boolean; bridgeReason?: string }>,
+    unitId?: string
+  ) => api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/walk${unitQuery(unitId)}`, { points }),
 };
 
 // ─── Uploads ──────────────────────────────────────────────────────────────────

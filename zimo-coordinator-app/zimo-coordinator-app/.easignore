@@ -1,0 +1,20 @@
+# What EAS must not receive, mirroring .gitignore.
+#
+# Needed only because a build can be run without version control, where
+# EAS has no .gitignore to consult and uploads the directory as it finds
+# it. A normal build reads git and excludes all of this already.
+#
+# `android/` is the line that matters. It is a local prebuild artifact and
+# untracked, but uploading it makes EAS read the project as the bare
+# workflow — which rejects `runtimeVersion: { policy: "appVersion" }` and
+# ignores `android.package` from app.json in favour of whatever the stale
+# native code says.
+node_modules/
+.expo/
+dist/
+.env
+*.log
+.DS_Store
+android/
+ios/
+expo-env.d.ts

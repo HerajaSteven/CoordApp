@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { farmsApi, verificationApi, boundaryApi, categoriesApi, uploadsApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
 import { getErrorMessage } from '@/utils/errors';
+import { measureWalk, outerEstimate } from '@/features/gps/area';
 import { useCamera } from '@/features/camera/useCamera';
 import { useOfflineStore } from '@/store/offline.store';
 import { useAuthStore } from '@/store/auth.store';
@@ -425,7 +426,18 @@ function GPSStep({
   onNext: () => void;
   completedSteps: readonly string[];
 }) {
-  const { currentLocation, isLocating, isWalking, walkPoints, locateMe, startBoundaryWalk, stopBoundaryWalk } = useGPS();
+  /*
+    THE DRAFT IS PER UNIT, NOT PER FARM.
+
+    Keyed on `appId` alone, every pond and plot on one farm shared a
+    single stored walk — so walking the second overwrote the first before
+    either had reached the server, and the saved-walk banner showed one
+    unit's points on another unit's screen. A farm walked as a whole gets
+    the empty suffix, which is the same three-state the platform uses for
+    the unit id itself.
+  */
+  const draftKey = `${appId}::${unitId ?? ''}`;
+  const { currentLocation, isLocating, isWalking, walkPoints, locateMe, startBoundaryWalk, stopBoundaryWalk, markEdgeUnwalkable, restoreBoundaryWalk } = useGPS(draftKey);
   const coordinator = useAuthStore((s) => s.coordinator);
   const defaultManualCoordinatesEnabled = useSettingsStore((s) => s.superAdminManualCoordinatesEnabled);
   const isSuperAdmin = coordinator?.role === 'SuperAdmin';
@@ -456,7 +468,7 @@ function GPSStep({
   */
   const existingBoundary = useQuery({
     queryKey: ['boundary', appId],
-    queryFn: async () => (await boundaryApi.get(appId)).data?.data as BoundaryRecord | undefined,
+    queryFn: async () => (await boundaryApi.get(appId, unitId ?? '')).data?.data as BoundaryRecord | undefined,
     staleTime: Infinity,
   });
 
@@ -469,8 +481,33 @@ function GPSStep({
       show and the coordinator should walk it again rather than be told
       a half-finished attempt is their boundary.
     */
-    if (!record || record.isWalkActive || record.pointCount < 3) {
+    if (!record) {
       return;
+    }
+
+    const localDraft = useOfflineStore.getState().boundaryDrafts[draftKey];
+    const serverUpdatedAt = record.updatedAt ? Date.parse(record.updatedAt) : 0;
+    const hasNewerLocalDraft = Boolean(
+      localDraft?.points.length && localDraft.updatedAt > serverUpdatedAt
+    );
+
+    if (record.boundaryPolygon && !record.isWalkActive && record.pointCount >= 3) {
+      if (hasNewerLocalDraft) return;
+      setWalk((current) => current ?? record);
+      setBoundarySaved(true);
+      useOfflineStore.getState().clearBoundaryDraft(draftKey);
+      return;
+    }
+
+    if (
+      walkPoints.length === 0 &&
+      record.boundaryWalk?.length &&
+      (!localDraft || serverUpdatedAt > localDraft.updatedAt)
+    ) {
+      restoreBoundaryWalk(record.boundaryWalk.map((point) => ({
+        ...point,
+        timestamp: new Date(point.timestamp),
+      })));
     }
 
     /*
@@ -478,16 +515,56 @@ function GPSStep({
       the newer truth, and the cached record is what the server held
       before it.
     */
-    setWalk((current) => current ?? record);
-    setBoundarySaved(true);
-  }, [existingBoundary.data]);
+  }, [appId, existingBoundary.data, restoreBoundaryWalk, walkPoints.length]);
   const [manualMode, setManualMode] = useState(isSuperAdmin && defaultManualCoordinatesEnabled);
+  /*
+    Set when an edge is marked unwalkable, so the resume button says what
+    it is for. The reason itself lives in the hook until the next fix.
+  */
+  const [bridgePending, setBridgePending] = useState(false);
   const [manualLat, setManualLat] = useState('');
   const [manualLng, setManualLng] = useState('');
   const [manualAccuracy, setManualAccuracy] = useState('10');
   const [loading, setLoading] = useState(false);
   const qc = useQueryClient();
   const enqueue = useOfflineStore((s) => s.enqueue);
+  const saveBoundaryDraft = useOfflineStore((s) => s.saveBoundaryDraft);
+  const endBoundaryDraft = useOfflineStore((s) => s.endBoundaryDraft);
+  const clearBoundaryDraft = useOfflineStore((s) => s.clearBoundaryDraft);
+  const localBoundaryDraft = useOfflineStore((s) => s.boundaryDrafts[draftKey]);
+
+  /*
+    Ended means the coordinator said the perimeter is complete. It is not
+    the same as stopped, and treating them as one is what let a finished
+    walk be resumed and extended.
+  */
+  const walkEnded = localBoundaryDraft?.endedAt != null;
+  const localSize = React.useMemo(() => measureWalk(walkPoints), [walkPoints]);
+
+  /*
+    The outer envelope, for a perimeter that could not be walked exactly.
+    Reported beside the walked figure, never instead of it — see the note
+    on `outerEstimate`.
+  */
+  const localOuter = React.useMemo(() => outerEstimate(walkPoints), [walkPoints]);
+
+  /*
+    Worth mentioning when the envelope is materially bigger than what was
+    walked, or when the walked shape cannot be trusted at all.
+
+    The second case is not an afterthought. A walk that resumed out of
+    order crosses itself, and its area collapses to near zero as the two
+    loops cancel — while every point sits ON the envelope, so the
+    deepest-detour measure is zero and a detour-only test would stay
+    silent exactly when the number is worthless. Five per cent keeps GPS
+    noise out of it.
+  */
+  const detoured =
+    localOuter.hectares != null
+    && localOuter.walkedHectares != null
+    && localOuter.extraHectares != null
+    && localOuter.extraHectares > 0.05
+    && (localOuter.extraHectares > localOuter.walkedHectares * 0.05 || localSize.rejection !== null);
 
   const saveGpsPoint = async (lat: number, lng: number, accuracyMeters: number) => {
     const state = await Network.getNetworkStateAsync();
@@ -502,11 +579,19 @@ function GPSStep({
         unitId
       );
     } else {
-      enqueue('boundaryPoints', appId, {
-        type: 'gps_center',
+      /*
+        `gpsCenters`, not `boundaryPoints`. A centre point is not a fix on
+        a walk, and queuing it as one sent `centerLat`/`centerLng` to a
+        collection that declares `lat`/`lng` — so the server threw the
+        item out, and with it the whole batch, on every attempt for as
+        long as it sat there. One offline centre point was enough to stop
+        a coordinator's queue draining again.
+      */
+      enqueue('gpsCenters', appId, {
         centerLat: lat,
         centerLng: lng,
-        accuracyMeters
+        accuracyMeters,
+        unitId: unitId ?? null
       });
     }
   };
@@ -562,12 +647,81 @@ function GPSStep({
     }
   };
 
+  /**
+   * The walk is finished. Measure it here, say so, and then send it.
+   *
+   * Ending and stopping were the same button, and they are not the same
+   * decision. Stopping pauses the receiver; the walk can be picked up
+   * again. Ending says the perimeter is complete — which is the point at
+   * which a size means anything, and the point after which appending more
+   * fixes would join two separate traverses into one nonsense polygon.
+   *
+   * The size is worked out on the phone and shown before anything is
+   * sent, because the only moment walking it again is cheap is while the
+   * coordinator is still standing on it. Previously the figure came back
+   * in the response to a successful save, so a failed save showed no size
+   * at all — and every save on a bad connection failed.
+   */
+  const handleEndWalk = async () => {
+    stopBoundaryWalk();
+
+    if (walkPoints.length < 3) {
+      Alert.alert('Not enough points', `A boundary needs at least 3 GPS points. You have ${walkPoints.length}.`);
+      return;
+    }
+
+    const size = measureWalk(walkPoints);
+
+    saveBoundaryDraft(draftKey, walkPoints);
+    endBoundaryDraft(draftKey);
+
+    const measured = size.hectares == null
+      ? 'The size could not be worked out.'
+      : `${size.hectares.toFixed(4)} ha from ${walkPoints.length} points`
+        + (size.pathMetres == null ? '' : `, ${size.pathMetres.toFixed(0)} m walked`);
+
+    /*
+      The envelope, when the walk clearly went inside the farm. A
+      coordinator who had to cut around bush should be told what the farm
+      measures if those detours are ignored — and told that it is an
+      estimate, because a farm that is genuinely concave would be
+      overstated by exactly this arithmetic.
+    */
+    const outer = outerEstimate(walkPoints);
+    const worthShowing =
+      outer.hectares != null
+      && outer.walkedHectares != null
+      && outer.extraHectares != null
+      && outer.extraHectares > 0.05
+      && (outer.extraHectares > outer.walkedHectares * 0.05 || size.rejection !== null);
+
+    const detour = worthShowing
+      ? `\n\nOuter estimate: about ${outer.hectares?.toFixed(4)} ha`
+        + (outer.deepestInwardMetres != null && outer.deepestInwardMetres >= 15
+          ? ` — the walk went up to ${outer.deepestInwardMetres} m inside the farm `
+            + `(${outer.pointsInsideCount} of ${walkPoints.length} points).`
+          : ', taking the farthest point in each direction.')
+        + ' An estimate only, and too high if the farm is not a simple shape.'
+      : '';
+
+    Alert.alert(
+      size.rejection ? 'Walk ended — but check this' : 'Walk ended',
+      size.rejection
+        ? `${measured}\n\n${size.rejection}${detour}\n\nYou are still on the farm. Walk it again if you can.`
+        : `${measured}${detour}\n\nSending it to the server now.`
+    );
+
+    await handleCloseBoundary();
+  };
+
   const handleCloseBoundary = async () => {
     stopBoundaryWalk();
     if (walkPoints.length < 3) {
       Alert.alert('Not enough points', `Need at least 3 GPS points. You have ${walkPoints.length}.`);
       return;
     }
+    saveBoundaryDraft(draftKey, walkPoints);
+    endBoundaryDraft(draftKey);
     setLoading(true);
     try {
       /*
@@ -588,19 +742,41 @@ function GPSStep({
         discards the server's points, and pressing it with nothing to put
         in their place would throw away the walk somebody just did.
       */
-      const open = await boundaryApi.get(appId).catch(() => null);
-      if (open?.data?.data?.isWalkActive) {
-        await boundaryApi.closeWalk(appId, true);
-      }
+      /*
+        ONE REQUEST FOR THE WHOLE WALK.
 
-      await boundaryApi.startWalk(appId);
-      for (const pt of walkPoints) {
-        await boundaryApi.addPoint(appId, { lat: pt.lat, lng: pt.lng, accuracyMeters: pt.accuracyMeters });
-      }
-      const { data } = await boundaryApi.closeWalk(appId);
+        This was `startWalk`, then an `addPoint` for every fix, then
+        `closeWalk` — 502 requests for a 500-point walk, each one a chance
+        to fail, all of them over a field connection. On 13 November a
+        500-point walk of Ogun-osun 65 got 52 points up in 37 seconds and
+        stopped there: request 53 hit the 15-second timeout and about 450
+        points were never sent. The loop was never going to finish — at
+        the 710 ms per request that link managed it needed six
+        uninterrupted minutes.
+
+        Sending the walk whole also means there is no `start`, so there is
+        no half-open walk left on the server to block the next attempt.
+        That removes the lock from this path rather than working around
+        it.
+      */
+      const { data } = await boundaryApi.saveWalk(
+        appId,
+        walkPoints.map((pt) => ({
+          lat: pt.lat,
+          lng: pt.lng,
+          accuracyMeters: pt.accuracyMeters,
+          /* When the receiver took this fix, not when we got round to sending it. */
+          capturedAt: pt.timestamp.toISOString(),
+          /* An edge nobody could walk, and why. */
+          bridged: pt.bridged,
+          bridgeReason: pt.bridgeReason,
+        })),
+        unitId ?? ''
+      );
       const measured = data.data;
       setWalk(measured);
       setBoundarySaved(true);
+      clearBoundaryDraft(draftKey);
       await refreshProgress(qc, appId);
 
       /*
@@ -618,15 +794,53 @@ function GPSStep({
         Alert.alert('Boundary Saved', `${describeArea(measured)} from ${measured.pointCount} points.`);
       }
     } catch (err: unknown) {
+      const message = getErrorMessage(err, 'Failed to save boundary walk.');
+
       /*
-        The server's own sentence, not ours. Every refusal on this path
-        says something a coordinator can act on — the centre point is not
-        verified yet, a walk is already open, three points are needed —
-        and the bare `catch` that used to be here replaced all of them
-        with "Failed to save boundary walk," which says only that
-        something went wrong. A whole day was spent not knowing which.
+        QUEUED, SO IT GOES UP WITHOUT BEING ASKED.
+
+        Saving it on the device was already better than losing it, but it
+        still waited on somebody remembering to come back to this screen
+        and press the button again — and the walk this replaced was lost
+        exactly that way. The queue drains itself whenever there is a
+        network, from anywhere in the app, including after a cold start.
+
+        One item carrying the whole walk, not a point at a time. The live
+        path is a start, N points and a close; over a link bad enough to
+        have brought us here, that is the sequence that failed. Queued
+        work has to be a single thing that either lands or does not.
       */
-      Alert.alert('Could not save the walk', getErrorMessage(err, 'Failed to save boundary walk.'));
+      enqueue('boundaryWalks', appId, {
+        unitId: unitId ?? null,
+        points: walkPoints.map((pt) => ({
+          lat: pt.lat,
+          lng: pt.lng,
+          accuracyMeters: pt.accuracyMeters,
+          capturedAt: pt.timestamp.toISOString(),
+          bridged: pt.bridged,
+          bridgeReason: pt.bridgeReason,
+        })),
+      });
+
+      try {
+        const { data } = await boundaryApi.pauseWalk(appId, unitId ?? '');
+        const paused = data.data;
+        if (paused.hasPolygon) {
+          setBoundarySaved(true);
+          clearBoundaryDraft(draftKey);
+          Alert.alert('Boundary already saved', `${paused.pointCount} points are finalized on the server.`);
+        } else {
+          Alert.alert(
+            'Walk queued for upload',
+            `${message}\n\n${walkPoints.length} points are saved on this device and queued. They will upload by themselves as soon as there is a connection — you do not need to come back to this screen.`
+          );
+        }
+      } catch {
+        Alert.alert(
+          'Walk queued for upload',
+          `${message}\n\n${walkPoints.length} points are saved on this device and queued. They will upload by themselves as soon as there is a connection — you do not need to come back to this screen.`
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -718,7 +932,55 @@ function GPSStep({
         {isWalking && (
           <View className="bg-yellow-50 rounded-xl p-3 mb-3">
             <Text className="text-yellow-500 font-semibold">🔴 Walk in progress</Text>
-            <Text className="text-text-3 text-xs mt-1">{walkPoints.length} points recorded</Text>
+            <Text className="text-text-3 text-xs mt-1">{walkPoints.length} points recorded and saved on this device</Text>
+          </View>
+        )}
+
+        {!boundarySaved && !isWalking && (localBoundaryDraft?.points.length ?? 0) > 0 && (
+          <View className="bg-yellow-50 rounded-xl p-3 mb-3">
+            <Text className="text-yellow-500 font-semibold">
+              {walkEnded ? 'Walk ended — measured on this device' : 'Walk saved on this device'}
+            </Text>
+            <Text className="text-text-3 text-xs mt-1">
+              {localBoundaryDraft?.points.length} points · not yet finalized on the server
+            </Text>
+            {/*
+              The phone's own figure, shown without waiting for a server
+              that may be hours away. The platform measures the polygon it
+              stores and keeps its own reading; this is the one for the
+              person standing on the farm.
+            */}
+            {walkEnded && localSize.hectares != null && (
+              <Text className="text-text font-semibold text-sm mt-1">
+                {localSize.hectares.toFixed(4)} ha
+                {localSize.pathMetres == null ? '' : ` · ${localSize.pathMetres.toFixed(0)} m walked`}
+              </Text>
+            )}
+            {walkEnded && localSize.rejection && (
+              <Text className="text-yellow-500 text-xs mt-1 font-semibold">{localSize.rejection}</Text>
+            )}
+            {/*
+              Labelled an estimate, every time it is shown. A boundary
+              that could not be walked exactly has no measured size, and
+              printing one as though it did is how a figure nobody stands
+              behind ends up under a loan.
+            */}
+            {walkEnded && detoured && (
+              <Text className="text-text-3 text-xs mt-1">
+                Outer estimate {localOuter.hectares?.toFixed(4)} ha — not a measurement.
+                {localOuter.deepestInwardMetres != null && localOuter.deepestInwardMetres >= 15
+                  ? ` Walk went up to ${localOuter.deepestInwardMetres} m inside the farm `
+                    + `(${localOuter.pointsInsideCount} of ${walkPoints.length} points).`
+                  : ''}
+              </Text>
+            )}
+            {/* The stretches of edge nobody could walk, and what they stand in for. */}
+            {walkEnded && localSize.bridgedSegments > 0 && (
+              <Text className="text-text-3 text-xs mt-1">
+                {localSize.bridgedSegments} stretch{localSize.bridgedSegments === 1 ? '' : 'es'} bridged
+                {' '}· {localSize.bridgedMetres} m of boundary not walked
+              </Text>
+            )}
           </View>
         )}
 
@@ -764,15 +1026,197 @@ function GPSStep({
           </View>
         )}
 
-        {!isWalking && !boundarySaved && (
-          <Button label="Start Boundary Walk" onPress={startBoundaryWalk} variant="secondary" fullWidth />
-        )}
-        {isWalking && (
+        {/*
+          Resume is offered only while the walk is unfinished. Once ended
+          it is withheld, because appending to a completed perimeter joins
+          two traverses into one polygon that describes neither.
+        */}
+        {!isWalking && !boundarySaved && !walkEnded && (
           <Button
-            label={loading ? 'Saving...' : `Stop & Save Walk (${walkPoints.length} pts)`}
+            label={
+              bridgePending
+                ? 'Resume on the other side'
+                : walkPoints.length > 0
+                  ? 'Resume Boundary Walk'
+                  : 'Start Boundary Walk'
+            }
+            onPress={() => {
+              setBridgePending(false);
+              startBoundaryWalk(walkPoints.length > 0);
+            }}
+            variant="secondary"
+            fullWidth
+          />
+        )}
+        {/*
+          THE WALK IS FINISHED. Distinct from stopping, and the only
+          action that produces a size.
+        */}
+        {!isWalking && !boundarySaved && !walkEnded && walkPoints.length >= 3 && (
+          <Button
+            label={loading ? 'Saving...' : `End boundary walk & calculate size (${walkPoints.length} pts)`}
+            onPress={handleEndWalk}
+            loading={loading}
+            variant="danger"
+            fullWidth
+          />
+        )}
+        {/* Ended, measured, and still owed to the server. */}
+        {!isWalking && !boundarySaved && walkEnded && (
+          <Button
+            label={loading ? 'Sending...' : `Send ${walkPoints.length} points to the server`}
             onPress={handleCloseBoundary}
             loading={loading}
             variant="danger"
+            fullWidth
+          />
+        )}
+        {/*
+          STARTING OVER HAS TO BE POSSIBLE, AND HAS TO BE DELIBERATE.
+
+          Once a walk is held on the device the button above reads
+          "Resume", which is right for a walk interrupted halfway and
+          wrong for a walk somebody wants to do again — resuming appends,
+          so a second traverse would join onto the first and the polygon
+          would jump between two different parts of the farm.
+
+          That is not hypothetical: the way a failed walk used to be
+          redone was to press Start again, which silently wiped it. So the
+          discard is here, named, behind a confirmation, and it is the
+          only thing in this screen that throws a walk away.
+        */}
+        {/*
+          END THE SERVER'S WALK, by hand.
+
+          Starting a walk used to set a lock that only a successful close
+          cleared, and the app's only route to a walk began by starting
+          one — so a failed save left the farm locked and every retry
+          bounced off it. Saving the walk whole means this path no longer
+          opens one at all, but production still holds rows stuck that
+          way, and phones on older builds keep making them.
+
+          It does not touch the points. The server keeps every fix it has;
+          all this does is say the walk is over, which is what nothing
+          could say before.
+        */}
+        {!isWalking && !boundarySaved && existingBoundary.data?.isWalkActive === true && (
+          <Button
+            label="End the walk left open on the server"
+            onPress={async () => {
+              setLoading(true);
+              try {
+                const { data } = await boundaryApi.pauseWalk(appId, unitId ?? '');
+                await existingBoundary.refetch();
+                Alert.alert(
+                  'Walk ended on the server',
+                  `The server was holding a walk open with ${data.data.pointCount} points. `
+                    + 'Those points are kept — it is no longer marked as in progress, '
+                    + 'so you can save a walk for this farm again.'
+                );
+              } catch (err: unknown) {
+                Alert.alert('Could not end the walk', getErrorMessage(err));
+              } finally {
+                setLoading(false);
+              }
+            }}
+            loading={loading}
+            variant="secondary"
+            fullWidth
+          />
+        )}
+        {!isWalking && !boundarySaved && walkPoints.length > 0 && (
+          <Button
+            label="Discard and walk again"
+            onPress={() =>
+              Alert.alert(
+                'Discard this walk?',
+                `${walkPoints.length} points recorded on this device will be deleted. `
+                  + 'They have not been saved on the server, so this cannot be undone.',
+                [
+                  { text: 'Keep it', style: 'cancel' },
+                  {
+                    text: 'Discard',
+                    style: 'destructive',
+                    onPress: () => {
+                      restoreBoundaryWalk([]);
+                      clearBoundaryDraft(draftKey);
+                    },
+                  },
+                ]
+              )
+            }
+            variant="secondary"
+            fullWidth
+          />
+        )}
+        {/*
+          Two actions while recording, because they are two decisions.
+          Pausing is for an interrupted walk — a gate to open, a farmer to
+          talk to — and keeps the walk resumable. Ending declares the
+          perimeter complete and is what yields a size.
+        */}
+        {isWalking && (
+          <Button
+            label={loading ? 'Saving...' : `End boundary walk & calculate size (${walkPoints.length} pts)`}
+            onPress={handleEndWalk}
+            loading={loading}
+            variant="danger"
+            fullWidth
+          />
+        )}
+        {isWalking && (
+          <Button
+            label="Pause recording (keep walking later)"
+            onPress={stopBoundaryWalk}
+            variant="secondary"
+            fullWidth
+          />
+        )}
+        {/*
+          THE EDGE AHEAD CANNOT BE WALKED.
+
+          Recording stops, the coordinator crosses inside the farm, and
+          rejoins the boundary further along. Nothing is captured in
+          between, so the polygon gets a straight line across the gap
+          rather than a bite taken out of it — and the reason travels with
+          that segment, so a reviewer reading the record later can tell a
+          deliberate bridge from a cut corner.
+        */}
+        {isWalking && walkPoints.length > 0 && (
+          <Button
+            label="Can't walk this edge — skip to the other side"
+            onPress={() =>
+              Alert.alert(
+                "Why can't this edge be walked?",
+                'Recording stops. Walk round to where the boundary can be followed again, '
+                  + 'then press Resume — the gap will be recorded as a straight edge with this reason.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Bush / overgrown',
+                    onPress: () => {
+                      markEdgeUnwalkable('Bush or overgrown');
+                      setBridgePending(true);
+                    },
+                  },
+                  {
+                    text: 'Blocked or fenced',
+                    onPress: () => {
+                      markEdgeUnwalkable('Blocked or fenced');
+                      setBridgePending(true);
+                    },
+                  },
+                  {
+                    text: 'Water / impassable',
+                    onPress: () => {
+                      markEdgeUnwalkable('Water or impassable ground');
+                      setBridgePending(true);
+                    },
+                  },
+                ]
+              )
+            }
+            variant="secondary"
             fullWidth
           />
         )}

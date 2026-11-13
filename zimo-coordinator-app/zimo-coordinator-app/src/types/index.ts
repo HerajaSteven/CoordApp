@@ -135,6 +135,14 @@ export interface DynamicCategoryEntry {
 
 // ─── Boundary ─────────────────────────────────────────────────────────────────
 export interface BoundaryRecord {
+  boundaryWalk: Array<{
+    lat: number;
+    lng: number;
+    accuracyMeters: number;
+    timestamp: string;
+  }>;
+  boundaryPolygon: { type: 'Polygon'; coordinates: number[][][] } | null;
+  updatedAt: string | null;
   areaHectares: number | null;
   /* The platform's reading of the same polygon, and why the walk cannot be
      read as a measurement of a farm — see ClosedWalk below. Null for a walk
@@ -456,6 +464,17 @@ export interface ApiResponse<T> {
 export type SyncCollection =
   | 'verificationSteps'
   | 'boundaryPoints'
+  /** A finished walk, queued whole when the live save could not reach the server. */
+  | 'boundaryWalks'
+  /**
+   * The farm's centre point, captured with no signal.
+   *
+   * Its own collection. It used to be queued as `boundaryPoints` carrying
+   * `centerLat`/`centerLng`, which are not the keys that collection
+   * declares — so the server rejected the item, and with it the entire
+   * batch, every ten seconds for as long as it sat in the queue.
+   */
+  | 'gpsCenters'
   | 'visits'
   | 'incidents';
 
@@ -466,6 +485,13 @@ export interface OfflineQueueItem {
   payload: Record<string, unknown>;
   clientTimestamp: string;
   createdAt: number;
+  /**
+   * Failed server attempts. Absent on items queued before this existed.
+   *
+   * An item the server will never accept was otherwise retried every ten
+   * seconds forever, and the queue could only grow.
+   */
+  attempts?: number;
 }
 
 // ─── Map ──────────────────────────────────────────────────────────────────────

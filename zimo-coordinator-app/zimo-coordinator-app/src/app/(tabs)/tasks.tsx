@@ -9,13 +9,35 @@ export default function TasksScreen() {
   const insets = useSafeAreaInsets();
   const { queue, clearQueue, isSyncing, lastSyncAt } = useOfflineStore();
 
+  /*
+    SAY WHAT WOULD BE DESTROYED.
+
+    This warned that clearing "will discard all pending offline data" and
+    advised doing it "only if data has already been submitted" — which
+    tells somebody nothing about what is in there, and is exactly the
+    wrong advice while the queue is holding work the server has not been
+    able to take yet. A boundary walk is an hour in a field; it deserves
+    to be named before it is deleted.
+  */
   const handleClear = () => {
+    const walks = queue.filter((item) => item.collection === 'boundaryWalks');
+    const points = walks.reduce(
+      (total, item) => total + ((item.payload?.points as unknown[] | undefined)?.length ?? 0),
+      0
+    );
+
+    const detail = walks.length
+      ? `${walks.length} boundary walk${walks.length === 1 ? '' : 's'} (${points} GPS points) `
+        + `${walks.length === 1 ? 'is' : 'are'} waiting here and ${walks.length === 1 ? 'has' : 'have'} `
+        + 'NOT reached the server. Clearing deletes them permanently — the walks would have to be done again on foot.'
+      : `${queue.length} pending item${queue.length === 1 ? '' : 's'} will be deleted permanently.`;
+
     Alert.alert(
       'Clear Offline Queue',
-      'This will discard all pending offline data. Only do this if data has already been submitted. Continue?',
+      `${detail}\n\nThis cannot be undone.`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Clear', style: 'destructive', onPress: clearQueue },
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Delete anyway', style: 'destructive', onPress: clearQueue },
       ]
     );
   };
