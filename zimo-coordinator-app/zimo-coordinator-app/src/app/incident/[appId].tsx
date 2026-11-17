@@ -7,10 +7,9 @@ import {
 } from 'react-native';
 import { Text, FACE } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
-import { incidentsApi } from '@/services/api';
 import { Button, Input, Card, HeaderBackButton } from '@/components/ui';
 import { getErrorMessage } from '@/utils/errors';
+import { useOfflineStore } from '@/store/offline.store';
 
 const INCIDENT_TYPES = [
   'Crop disease',
@@ -32,7 +31,7 @@ type Severity = 'low' | 'medium' | 'high_critical';
 export default function IncidentReportScreen() {
   const { appId } = useLocalSearchParams<{ appId: string }>();
   const router = useRouter();
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
 
   const [incidentType, setIncidentType] = useState('');
   const [severity, setSeverity] = useState<Severity>('low');
@@ -52,7 +51,7 @@ export default function IncidentReportScreen() {
 
     setLoading(true);
     try {
-      await incidentsApi.create(appId, {
+      enqueue('incidents', appId, {
         incidentType,
         severity,
         incidentDateTime: new Date().toISOString(),
@@ -60,14 +59,12 @@ export default function IncidentReportScreen() {
         actionTaken: actionTaken || undefined,
       });
 
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
-
       const isHighCritical = severity === 'high_critical';
       Alert.alert(
-        isHighCritical ? '🚨 Incident Escalated' : '✅ Incident Reported',
+        'Saved on this device',
         isHighCritical
-          ? 'This incident has been escalated to your supervisor immediately.'
-          : 'The incident has been logged successfully.',
+          ? 'This high-severity incident is saved and will be sent for escalation when sync succeeds.'
+          : 'This incident is saved and will be sent when sync succeeds.',
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (err) {

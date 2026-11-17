@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
 import * as Network from 'expo-network';
+import { useQueryClient } from '@tanstack/react-query';
 import { useOfflineStore } from '@/store/offline.store';
+import { cacheOfflineReferenceData } from '@/store/offlineBootstrap';
+import { useAuthStore } from '@/store/auth.store';
 
 /**
  * Drains the offline queue by itself, which is the only way it should ever
  * be drained.
  *
- * A coordinator works where there is no signal. Asking them to remember to
- * press Sync when they get back to town is asking them to remember the one
- * thing the app knows better than they do — so there is no Sync button
- * anywhere any more, and this runs for the whole session from the root
- * layout.
+ * A coordinator may sync manually in the Sync Center; this background
+ * drain is the backup that handles reconnection and cold starts.
  *
  * It used to sync only after SEEING the device go offline, because it
  * latched `wasOffline` before comparing. That misses the case that matters
@@ -24,23 +24,36 @@ import { useOfflineStore } from '@/store/offline.store';
  * so the cost is a timer rather than traffic.
  */
 export function useNetworkSync() {
-  const { queue, sync, isSyncing } = useOfflineStore();
+  const queryClient = useQueryClient();
+  const { queue, sync, isSyncing, markSyncCompleted } = useOfflineStore();
+  const { offlineBootstrapPending, completeOfflineBootstrap } = useAuthStore();
 
   /*
     Read through a ref so the interval is not torn down and rebuilt on every
     queue change, which would reset the 10-second clock each time a
     coordinator saved something.
   */
-  const latest = useRef({ queue, sync, isSyncing });
-  latest.current = { queue, sync, isSyncing };
+  const latest = useRef({
+    queue, sync, isSyncing, markSyncCompleted, offlineBootstrapPending, completeOfflineBootstrap,
+  });
+  latest.current = {
+    queue, sync, isSyncing, markSyncCompleted, offlineBootstrapPending, completeOfflineBootstrap,
+  };
 
   useEffect(() => {
     let cancelled = false;
 
     const check = async () => {
-      const { queue: pending, sync: run, isSyncing: busy } = latest.current;
+      const {
+        queue: pending,
+        sync: run,
+        isSyncing: busy,
+        markSyncCompleted: recordSync,
+        offlineBootstrapPending: bootstrapPending,
+        completeOfflineBootstrap: completeBootstrap,
+      } = latest.current;
 
-      if (pending.length === 0 || busy) {
+      if ((!pending.some((item) => item.status !== 'synced') && !bootstrapPending) || busy) {
         return;
       }
 
@@ -59,7 +72,17 @@ export function useNetworkSync() {
       }
 
       if (online && !cancelled) {
-        run();
+        if (bootstrapPending) {
+          await cacheOfflineReferenceData(queryClient);
+          completeBootstrap();
+          recordSync();
+        }
+        const result = await run();
+        if (result.synced > 0 && !cancelled) {
+          await queryClient.invalidateQueries();
+          await cacheOfflineReferenceData(queryClient);
+          recordSync();
+        }
       }
     };
 
@@ -70,5 +93,5 @@ export function useNetworkSync() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [queryClient]);
 }

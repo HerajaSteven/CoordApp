@@ -18,6 +18,7 @@ import { useNetworkSync } from '@/hooks/useNetworkSync';
 import { initSentry } from '@/config/sentry';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useRootScale } from '@/theme/rootScale';
+import { restoreQueryCache } from '@/store/queryCache';
 
 initSentry();
 
@@ -27,9 +28,11 @@ void SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 2, staleTime: 1000 * 60 * 2, gcTime: 1000 * 60 * 10 },
+    queries: { retry: 0, staleTime: Infinity, gcTime: Infinity },
   },
 });
+
+restoreQueryCache(queryClient);
 
 function AppContent() {
   const loadSession = useAuthStore((s) => s.loadSession);

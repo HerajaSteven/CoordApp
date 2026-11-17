@@ -19,7 +19,7 @@ export default function ClusterDetailScreen() {
   const { clusterId } = useLocalSearchParams<{ clusterId: string }>();
   const router = useRouter();
 
-  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
+  const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['cluster', clusterId],
     queryFn: () => clustersApi.get(clusterId),
     select: (res) => res.data.data,
@@ -46,7 +46,7 @@ export default function ClusterDetailScreen() {
   });
 
   if (isLoading) return <LoadingSpinner />;
-  if (isError || !data?.cluster) return <ErrorMessage message="Could not load cluster farm." onRetry={refetch} />;
+  if (!data?.cluster) return <ErrorMessage message="Could not load cluster farm." onRetry={refetch} />;
 
   const cluster = data.cluster;
   const status = STATUS_CONFIG[cluster.status] ?? STATUS_CONFIG.pending;

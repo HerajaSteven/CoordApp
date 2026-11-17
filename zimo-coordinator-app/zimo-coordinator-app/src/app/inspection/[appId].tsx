@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Text, FACE } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { visitsApi } from '@/services/api';
 import { Button, Input, Card, HeaderBackButton } from '@/components/ui';
 import { getErrorMessage } from '@/utils/errors';
+import { useOfflineStore } from '@/store/offline.store';
 
 /**
  * A monitoring visit, which is what `visitType: 'inspection'` is for.
@@ -59,7 +60,7 @@ const SIGNS = [
 export default function InspectionScreen() {
   const { appId } = useLocalSearchParams<{ appId: string }>();
   const router = useRouter();
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
 
   const [cropHealth, setCropHealth] = useState<CropHealth | ''>('');
   const [pest, setPest] = useState(false);
@@ -100,7 +101,7 @@ export default function InspectionScreen() {
 
     setLoading(true);
     try {
-      await visitsApi.create(appId, {
+      enqueue('visits', appId, {
         visitType: 'inspection',
         visitedAt: new Date().toISOString(),
         cropHealth,
@@ -112,10 +113,7 @@ export default function InspectionScreen() {
         notes: notes.trim() || undefined,
       });
 
-      await qc.invalidateQueries({ queryKey: ['visits', appId] });
-      await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
-
-      Alert.alert('✅ Inspection recorded', 'This visit has been logged against the farm.', [
+      Alert.alert('Inspection saved on this device', 'This visit will be sent when sync succeeds.', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (err) {

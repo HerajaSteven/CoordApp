@@ -18,6 +18,8 @@ import { unitsApi } from '@/services/api';
 import { Card, Button, Input, LoadingSpinner, ErrorMessage, HeaderBackButton } from '@/components/ui';
 import type { FarmUnit, UnitType } from '@/types';
 import { getErrorMessage } from '@/utils/errors';
+import { offlineSiteClientId, offlineUnitId } from '@/utils/offlineIds';
+import { useOfflineStore } from '@/store/offline.store';
 
 const UNIT_TYPES: Array<{ value: UnitType; label: string; icon: string }> = [
   { value: 'pond', label: 'Pond', icon: '🐟' },
@@ -72,7 +74,11 @@ const createUnitSchema = z.object({
 });
 type CreateUnitForm = z.infer<typeof createUnitSchema>;
 
-function UnitCard({ unit, onPress }: { unit: FarmUnit; onPress: () => void }) {
+function UnitCard({ unit, onPress, syncStatus }: {
+  unit: FarmUnit;
+  onPress: () => void;
+  syncStatus?: 'pending' | 'failed';
+}) {
   const status = STATUS_CONFIG[unit.status] ?? STATUS_CONFIG.pending;
   const typeInfo = UNIT_TYPES.find((t) => t.value === unit.unitType);
 
@@ -84,7 +90,11 @@ function UnitCard({ unit, onPress }: { unit: FarmUnit; onPress: () => void }) {
             <Text className="text-2xl mr-2">{typeInfo?.icon ?? '📍'}</Text>
             <View className="flex-1">
               <Text className="font-bold text-text" numberOfLines={1}>{unit.label}</Text>
-              <Text className="text-xs text-text-3 font-mono mt-0.5">{unit.unitId}</Text>
+              <Text className="text-xs text-text-3 font-mono mt-0.5">
+                {syncStatus
+                  ? syncStatus === 'failed' ? 'Sync failed · retry pending' : 'Saved on this device'
+                  : unit.unitId}
+              </Text>
             </View>
           </View>
           <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: status.bg }}>
@@ -132,6 +142,7 @@ function AddUnitModal({
 }) {
   const [loading, setLoading] = useState(false);
   const insets = useSafeAreaInsets();
+  const enqueue = useOfflineStore((state) => state.enqueue);
 
   const { control, handleSubmit, watch, setValue, reset, formState: { errors } } =
     useForm<CreateUnitForm>({
@@ -146,12 +157,16 @@ function AddUnitModal({
   const submit = async (data: CreateUnitForm) => {
     setLoading(true);
     try {
-      await unitsApi.create(appId, siteId, {
+      enqueue('units', appId, {
+        siteId,
+        siteClientId: offlineSiteClientId(siteId),
+        body: {
         label: data.label,
         unitType: data.unitType,
         primaryFocus: data.primaryFocus || undefined,
         secondaryFocus: data.secondaryFocus || undefined,
         notes: data.notes || undefined,
+        },
       });
       reset();
       onCreated();
@@ -314,15 +329,46 @@ export default function UnitsScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
+  const queue = useOfflineStore((state) => state.queue);
 
-  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
+  const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['units', appId, siteId],
     queryFn: () => unitsApi.list(appId, siteId),
     select: (res) => res.data.data,
   });
 
   const units = data?.units ?? [];
+  const localUnits = queue
+    .filter((item) =>
+      item.collection === 'units'
+      && item.appId === appId
+      && item.payload.siteId === siteId
+      && item.status !== 'synced'
+    )
+    .map((item) => {
+      const body = item.payload.body as Record<string, unknown>;
+      const timestamp = item.clientTimestamp;
+      const unit: FarmUnit = {
+        _id: item.clientId,
+        registrationId: '',
+        appId,
+        siteId,
+        unitId: offlineUnitId(item.clientId),
+        unitNumber: 0,
+        label: String(body.label ?? 'New unit'),
+        unitType: UNIT_TYPES.find((type) => type.value === body.unitType)?.value ?? 'other',
+        primaryFocus: typeof body.primaryFocus === 'string' ? body.primaryFocus : null,
+        secondaryFocus: typeof body.secondaryFocus === 'string' ? body.secondaryFocus : null,
+        status: 'pending',
+        notes: typeof body.notes === 'string' ? body.notes : null,
+        createdBy: '',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      return { item, unit };
+    });
   const summary = data?.summary;
+  const isOfflineSite = offlineSiteClientId(siteId) !== null;
 
   const handleUnitCreated = async () => {
     setShowAddModal(false);
@@ -331,8 +377,10 @@ export default function UnitsScreen() {
     await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
   };
 
-  if (isLoading) return <LoadingSpinner />;
-  if (isError) return <ErrorMessage message="Could not load units." onRetry={refetch} />;
+  if (isLoading && !isOfflineSite && localUnits.length === 0) return <LoadingSpinner />;
+  if (!data && !isOfflineSite && localUnits.length === 0) {
+    return <ErrorMessage message="Could not load units." onRetry={refetch} />;
+  }
 
   return (
     <View className="flex-1 bg-bg">
@@ -359,7 +407,7 @@ export default function UnitsScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#0D7A3D" />}
       >
-        {units.length === 0 ? (
+        {units.length === 0 && localUnits.length === 0 ? (
           <Card className="items-center py-12 mt-4">
             <Text className="text-5xl mb-3">🗺️</Text>
             <Text className="font-bold text-text text-base mb-1">No units added yet</Text>
@@ -368,7 +416,8 @@ export default function UnitsScreen() {
             </Text>
           </Card>
         ) : (
-          units.map((unit) => (
+          <>
+            {units.map((unit) => (
             <UnitCard
               key={unit.unitId}
               unit={unit}
@@ -383,7 +432,25 @@ export default function UnitsScreen() {
                 })
               }
             />
-          ))
+            ))}
+            {localUnits.map(({ item, unit }) => (
+              <UnitCard
+                key={item.clientId}
+                unit={unit}
+                syncStatus={item.status === 'failed' ? 'failed' : 'pending'}
+                onPress={() =>
+                  router.push({
+                    pathname: '/verification/[appId]',
+                    params: {
+                      appId,
+                      unitId: unit.unitId,
+                      unitLabel: `${siteLabel ?? ''} — ${unit.label}`,
+                    },
+                  })
+                }
+              />
+            ))}
+          </>
         )}
       </ScrollView>
 

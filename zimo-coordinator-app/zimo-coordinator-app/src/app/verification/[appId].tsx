@@ -9,13 +9,14 @@ import {
 } from 'react-native';
 import { Text, FACE } from '@/components/ui/typography';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { farmsApi, verificationApi, boundaryApi, categoriesApi, uploadsApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
 import { getErrorMessage } from '@/utils/errors';
+import { offlineSiteClientId } from '@/utils/offlineIds';
 import { measureWalk, outerEstimate } from '@/features/gps/area';
 import { useCamera } from '@/features/camera/useCamera';
 import { useOfflineStore } from '@/store/offline.store';
@@ -33,9 +34,8 @@ import {
   InfoRow,
   HeaderBackButton,
 } from '@/components/ui';
-import type { BoundaryRecord, CategoryFieldDef, ClosedWalk, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto } from '@/types';
+import type { BoundaryRecord, CategoryFieldDef, ClosedWalk, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto, VerificationRecord } from '@/types';
 import { useStoredFileSource } from '@/features/camera/platformFile';
-import * as Network from 'expo-network';
 import { STEPS, STEP_LABELS, resumeStep, type Step } from '@/features/verification/steps';
 
 const EVIDENCE_SLOTS = [
@@ -51,9 +51,10 @@ const EVIDENCE_SLOTS = [
 ];
 
 // ─── Step: Identity ───────────────────────────────────────────────────────────
-function IdentityStep({ appId, unitId, onNext, completedSteps }: {
+function IdentityStep({ appId, unitId, siteId, onNext, completedSteps }: {
   appId: string;
   unitId?: string;
+  siteId?: string;
   onNext: () => void;
   completedSteps: string[];
 }) {
@@ -61,11 +62,11 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
   const [mismatch, setMismatch] = useState(false);
   const [mismatchReason, setMismatchReason] = useState('');
   const [loading, setLoading] = useState(false);
-  const { takePhoto, pickFromGallery, photos, uploadPhoto } = useCamera(appId);
+  const { takePhoto, pickFromGallery, photos, uploadPhoto } = useCamera(appId, siteId);
   const coordinator = useAuthStore((s) => s.coordinator);
+  const enqueue = useOfflineStore((s) => s.enqueue);
   const superAdminGalleryEvidenceEnabled = useSettingsStore((s) => s.superAdminGalleryEvidenceEnabled);
   const shouldUseGallery = coordinator?.role === 'SuperAdmin' && superAdminGalleryEvidenceEnabled;
-  const qc = useQueryClient();
 
   const selfie = photos.find((p) => p.slotKey === 'id-selfie');
   const idDoc = photos.find((p) => p.slotKey === 'id-doc');
@@ -78,28 +79,26 @@ function IdentityStep({ appId, unitId, onNext, completedSteps }: {
     }
     setLoading(true);
     try {
-      /*
-        The farmer's selfie and ID photo were taken on this screen and never
-        sent anywhere, so the step was saved with nothing a reviewer could
-        check the identity against. They are stored first now. A photo that
-        fails to upload stops the step, rather than saving it without one.
-      */
       for (const capture of [selfie, idDoc]) {
         if (capture && !capture.fileId) {
-          const stored = await uploadPhoto(capture, 'identity');
-          if (!stored) {
+          const queued = await uploadPhoto(capture, 'identity');
+          if (!queued) {
             setLoading(false);
             return;
           }
         }
       }
 
-      await verificationApi.identity(appId, {
-        confirmed: confirmed && !mismatch,
-        confidence: 96,
-        mismatchReason: mismatch ? mismatchReason || 'Other' : undefined,
-      }, unitId);
-      await refreshProgress(qc, appId);
+      enqueue('fieldActions', appId, {
+        action: 'identity',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: {
+          confirmed: confirmed && !mismatch,
+          confidence: 96,
+          mismatchReason: mismatch ? mismatchReason || 'Other' : undefined,
+        },
+      });
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed to save identity step.');
@@ -252,9 +251,10 @@ function CategoryChips({ categories, selected, onToggle }: {
   );
 }
 
-function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
+function FarmTypeStep({ appId, unitId, siteId, onNext, currentFarmType, declared }: {
   appId: string;
   unitId?: string;
+  siteId?: string;
   onNext: (type: 'crop' | 'livestock' | 'mixed') => void;
   currentFarmType: string | null;
   declared: { crop: string[]; livestock: string[] };
@@ -265,7 +265,7 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
   const [chosenCrops, setChosenCrops] = useState<string[]>(declared.crop);
   const [chosenLivestock, setChosenLivestock] = useState<string[]>(declared.livestock);
   const [loading, setLoading] = useState(false);
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
 
   const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['categories'],
@@ -305,8 +305,17 @@ function FarmTypeStep({ appId, unitId, onNext, currentFarmType, declared }: {
 
     setLoading(true);
     try {
-      await verificationApi.farmType(appId, selected, declaring, unitId);
-      await refreshProgress(qc, appId);
+      enqueue('fieldActions', appId, {
+        action: 'farmType',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: {
+          farmType: selected,
+          categories: declaring,
+          cropCategories: wantsCrops ? chosenCrops : [],
+          livestockCategories: wantsLivestock ? chosenLivestock : [],
+        },
+      });
       onNext(selected);
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -414,15 +423,31 @@ function describeArea(walk: Pick<ClosedWalk, 'derivedAreaHectares' | 'areaHectar
   return `${area} · ${Math.round(walk.perimeterMetres)} m perimeter`;
 }
 
+function boundaryDraftMatchesRecord(
+  draft: { points: Array<{ lat: number; lng: number; accuracyMeters: number; timestamp: string }> },
+  record: BoundaryRecord
+): boolean {
+  return record.pointCount === draft.points.length
+    && record.boundaryWalk.length === draft.points.length
+    && draft.points.every((point, index) => {
+      const saved = record.boundaryWalk[index];
+      return point.lat === saved.lat
+        && point.lng === saved.lng
+        && point.accuracyMeters === saved.accuracyMeters;
+    });
+}
+
 // ─── Step: GPS ────────────────────────────────────────────────────────────────
 function GPSStep({
   appId,
   unitId,
+  siteId,
   onNext,
   completedSteps,
 }: {
   appId: string;
   unitId?: string;
+  siteId?: string;
   onNext: () => void;
   completedSteps: readonly string[];
 }) {
@@ -436,9 +461,10 @@ function GPSStep({
     the empty suffix, which is the same three-state the platform uses for
     the unit id itself.
   */
-  const draftKey = `${appId}::${unitId ?? ''}`;
+  const draftKey = `${appId}::${siteId ? `site:${siteId}` : unitId ?? ''}`;
   const { currentLocation, isLocating, isWalking, walkPoints, locateMe, startBoundaryWalk, stopBoundaryWalk, markEdgeUnwalkable, restoreBoundaryWalk } = useGPS(draftKey);
   const coordinator = useAuthStore((s) => s.coordinator);
+  const isLocalSite = siteId ? offlineSiteClientId(siteId) !== null : false;
   const defaultManualCoordinatesEnabled = useSettingsStore((s) => s.superAdminManualCoordinatesEnabled);
   const isSuperAdmin = coordinator?.role === 'SuperAdmin';
 
@@ -467,10 +493,14 @@ function GPSStep({
     would show the coordinator the old one.
   */
   const existingBoundary = useQuery({
-    queryKey: ['boundary', appId],
-    queryFn: async () => (await boundaryApi.get(appId, unitId ?? '')).data?.data as BoundaryRecord | undefined,
+    queryKey: ['boundary', appId, unitId ?? '', siteId ?? ''],
+    queryFn: async () => (await boundaryApi.get(appId, siteId ? undefined : unitId ?? '', siteId)).data?.data as BoundaryRecord | undefined,
     staleTime: Infinity,
+    refetchOnMount: 'always',
+    enabled: !isLocalSite,
   });
+  const localBoundaryDraft = useOfflineStore((s) => s.boundaryDrafts[draftKey]);
+  const lastSyncAt = useOfflineStore((s) => s.lastSyncAt);
 
   React.useEffect(() => {
     const record = existingBoundary.data;
@@ -485,10 +515,12 @@ function GPSStep({
       return;
     }
 
-    const localDraft = useOfflineStore.getState().boundaryDrafts[draftKey];
+    const localDraft = localBoundaryDraft;
     const serverUpdatedAt = record.updatedAt ? Date.parse(record.updatedAt) : 0;
     const hasNewerLocalDraft = Boolean(
-      localDraft?.points.length && localDraft.updatedAt > serverUpdatedAt
+      localDraft?.points.length
+      && !boundaryDraftMatchesRecord(localDraft, record)
+      && localDraft.updatedAt > serverUpdatedAt
     );
 
     if (record.boundaryPolygon && !record.isWalkActive && record.pointCount >= 3) {
@@ -515,7 +547,13 @@ function GPSStep({
       the newer truth, and the cached record is what the server held
       before it.
     */
-  }, [appId, existingBoundary.data, restoreBoundaryWalk, walkPoints.length]);
+  }, [appId, draftKey, existingBoundary.data, localBoundaryDraft, restoreBoundaryWalk, walkPoints.length]);
+
+  React.useEffect(() => {
+    if (lastSyncAt) {
+      void existingBoundary.refetch();
+    }
+  }, [existingBoundary.refetch, lastSyncAt]);
   const [manualMode, setManualMode] = useState(isSuperAdmin && defaultManualCoordinatesEnabled);
   /*
     Set when an edge is marked unwalkable, so the resume button says what
@@ -526,13 +564,10 @@ function GPSStep({
   const [manualLng, setManualLng] = useState('');
   const [manualAccuracy, setManualAccuracy] = useState('10');
   const [loading, setLoading] = useState(false);
-  const qc = useQueryClient();
   const enqueue = useOfflineStore((s) => s.enqueue);
   const saveBoundaryDraft = useOfflineStore((s) => s.saveBoundaryDraft);
   const endBoundaryDraft = useOfflineStore((s) => s.endBoundaryDraft);
   const clearBoundaryDraft = useOfflineStore((s) => s.clearBoundaryDraft);
-  const localBoundaryDraft = useOfflineStore((s) => s.boundaryDrafts[draftKey]);
-
   /*
     Ended means the coordinator said the perimeter is complete. It is not
     the same as stopped, and treating them as one is what let a finished
@@ -567,33 +602,13 @@ function GPSStep({
     && (localOuter.extraHectares > localOuter.walkedHectares * 0.05 || localSize.rejection !== null);
 
   const saveGpsPoint = async (lat: number, lng: number, accuracyMeters: number) => {
-    const state = await Network.getNetworkStateAsync();
-    if (state.isConnected) {
-      await verificationApi.gps(
-        appId,
-        {
-          centerLat: lat,
-          centerLng: lng,
-          accuracyMeters
-        },
-        unitId
-      );
-    } else {
-      /*
-        `gpsCenters`, not `boundaryPoints`. A centre point is not a fix on
-        a walk, and queuing it as one sent `centerLat`/`centerLng` to a
-        collection that declares `lat`/`lng` — so the server threw the
-        item out, and with it the whole batch, on every attempt for as
-        long as it sat there. One offline centre point was enough to stop
-        a coordinator's queue draining again.
-      */
-      enqueue('gpsCenters', appId, {
-        centerLat: lat,
-        centerLng: lng,
-        accuracyMeters,
-        unitId: unitId ?? null
-      });
-    }
+    enqueue('gpsCenters', appId, {
+      centerLat: lat,
+      centerLng: lng,
+      accuracyMeters,
+      unitId: unitId ?? null,
+      siteId: siteId ?? null,
+    });
   };
 
   const handleLocate = async () => {
@@ -607,7 +622,6 @@ function GPSStep({
     try {
       await saveGpsPoint(loc.lat, loc.lng, loc.accuracyMeters);
       setGpsSaved(true);
-      await refreshProgress(qc, appId);
     } catch {
       setManualMode(true);
       Alert.alert('Error', 'Failed to save GPS coordinates.');
@@ -638,7 +652,6 @@ function GPSStep({
     try {
       await saveGpsPoint(lat, lng, accuracy);
       setGpsSaved(true);
-      await refreshProgress(qc, appId);
       Alert.alert('Saved', 'Manual coordinates saved successfully.');
     } catch {
       Alert.alert('Error', 'Failed to save manual coordinates.');
@@ -759,9 +772,7 @@ function GPSStep({
         That removes the lock from this path rather than working around
         it.
       */
-      const { data } = await boundaryApi.saveWalk(
-        appId,
-        walkPoints.map((pt) => ({
+      const points = walkPoints.map((pt) => ({
           lat: pt.lat,
           lng: pt.lng,
           accuracyMeters: pt.accuracyMeters,
@@ -770,77 +781,12 @@ function GPSStep({
           /* An edge nobody could walk, and why. */
           bridged: pt.bridged,
           bridgeReason: pt.bridgeReason,
-        })),
-        unitId ?? ''
-      );
-      const measured = data.data;
-      setWalk(measured);
-      setBoundarySaved(true);
-      clearBoundaryDraft(draftKey);
-      await refreshProgress(qc, appId);
-
-      /*
-        What the walk came to, not that it finished. "12 points recorded"
-        is true of a walk around a table, and every walk on record so far
-        is one: a handful of fixes seconds apart enclosing square metres of
-        ground against farms declared in hectares. The coordinator is
-        standing on the farm when this alert appears and can walk it again;
-        an hour later, nobody can.
-      */
-      if (measured.walkRejection) {
-        Alert.alert('Walk saved, but it does not measure the farm', measured.walkRejection
-          + '\n\nThe walk has been kept for review. Walk the perimeter again if you can.');
-      } else {
-        Alert.alert('Boundary Saved', `${describeArea(measured)} from ${measured.pointCount} points.`);
-      }
+        }));
+      enqueue('boundaryWalks', appId, { points, unitId: unitId ?? null, siteId: siteId ?? null });
+      Alert.alert('Saved on this device', `${walkPoints.length} boundary points are queued for sync.`);
     } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Failed to save boundary walk.');
-
-      /*
-        QUEUED, SO IT GOES UP WITHOUT BEING ASKED.
-
-        Saving it on the device was already better than losing it, but it
-        still waited on somebody remembering to come back to this screen
-        and press the button again — and the walk this replaced was lost
-        exactly that way. The queue drains itself whenever there is a
-        network, from anywhere in the app, including after a cold start.
-
-        One item carrying the whole walk, not a point at a time. The live
-        path is a start, N points and a close; over a link bad enough to
-        have brought us here, that is the sequence that failed. Queued
-        work has to be a single thing that either lands or does not.
-      */
-      enqueue('boundaryWalks', appId, {
-        unitId: unitId ?? null,
-        points: walkPoints.map((pt) => ({
-          lat: pt.lat,
-          lng: pt.lng,
-          accuracyMeters: pt.accuracyMeters,
-          capturedAt: pt.timestamp.toISOString(),
-          bridged: pt.bridged,
-          bridgeReason: pt.bridgeReason,
-        })),
-      });
-
-      try {
-        const { data } = await boundaryApi.pauseWalk(appId, unitId ?? '');
-        const paused = data.data;
-        if (paused.hasPolygon) {
-          setBoundarySaved(true);
-          clearBoundaryDraft(draftKey);
-          Alert.alert('Boundary already saved', `${paused.pointCount} points are finalized on the server.`);
-        } else {
-          Alert.alert(
-            'Walk queued for upload',
-            `${message}\n\n${walkPoints.length} points are saved on this device and queued. They will upload by themselves as soon as there is a connection — you do not need to come back to this screen.`
-          );
-        }
-      } catch {
-        Alert.alert(
-          'Walk queued for upload',
-          `${message}\n\n${walkPoints.length} points are saved on this device and queued. They will upload by themselves as soon as there is a connection — you do not need to come back to this screen.`
-        );
-      }
+      const message = getErrorMessage(err, 'Failed to save boundary walk on this device.');
+      Alert.alert('Could not save boundary walk', message);
     } finally {
       setLoading(false);
     }
@@ -1064,7 +1010,7 @@ function GPSStep({
         {/* Ended, measured, and still owed to the server. */}
         {!isWalking && !boundarySaved && walkEnded && (
           <Button
-            label={loading ? 'Sending...' : `Send ${walkPoints.length} points to the server`}
+            label={loading ? 'Saving...' : `Save ${walkPoints.length} points for sync`}
             onPress={handleCloseBoundary}
             loading={loading}
             variant="danger"
@@ -1243,9 +1189,9 @@ const landSchema = z.object({
 });
 type LandForm = z.infer<typeof landSchema>;
 
-function LandOwnershipStep({ appId, unitId, onNext }: { appId: string; unitId?: string; onNext: () => void }) {
+function LandOwnershipStep({ appId, unitId, siteId, onNext }: { appId: string; unitId?: string; siteId?: string; onNext: () => void }) {
   const [loading, setLoading] = useState(false);
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
   const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<LandForm>({
     resolver: zodResolver(landSchema),
     defaultValues: { ownershipType: '', docRef: '', docIssueDate: '', activeDispute: false, encumbrance: false },
@@ -1256,11 +1202,12 @@ function LandOwnershipStep({ appId, unitId, onNext }: { appId: string; unitId?: 
   const submit = async (data: LandForm) => {
     setLoading(true);
     try {
-      await verificationApi.landOwnership(appId, {
-        ...data,
-        docIssueDate: new Date(data.docIssueDate).toISOString(),
-      }, unitId);
-      await refreshProgress(qc, appId);
+      enqueue('fieldActions', appId, {
+        action: 'landOwnership',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: { ...data, docIssueDate: new Date(data.docIssueDate).toISOString() },
+      });
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -1323,9 +1270,9 @@ function LandOwnershipStep({ appId, unitId, onNext }: { appId: string; unitId?: 
 }
 
 // ─── Step: Infrastructure ─────────────────────────────────────────────────────
-function InfrastructureStep({ appId, unitId, onNext }: { appId: string; unitId?: string; onNext: () => void }) {
+function InfrastructureStep({ appId, unitId, siteId, onNext }: { appId: string; unitId?: string; siteId?: string; onNext: () => void }) {
   const [loading, setLoading] = useState(false);
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
   const [form, setForm] = useState({
     waterSource: '',
     irrigationStatus: '',
@@ -1362,16 +1309,20 @@ function InfrastructureStep({ appId, unitId, onNext }: { appId: string; unitId?:
     }
     setLoading(true);
     try {
-      await verificationApi.infrastructure(appId, {
-        waterSource: form.waterSource,
-        irrigationStatus: form.irrigationStatus || 'Rain-fed',
-        roadCondition: form.roadCondition,
-        distanceToRoadValue: parseFloat(form.distanceToRoadValue) || 0,
-        distanceToRoadUnit: form.distanceToRoadUnit,
-        storageType: form.storageType,
-        storageCapacityTonnes: form.storageCapacityTonnes ? parseFloat(form.storageCapacityTonnes) : undefined,
-      }, unitId);
-      await refreshProgress(qc, appId);
+      enqueue('fieldActions', appId, {
+        action: 'infrastructure',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: {
+          waterSource: form.waterSource,
+          irrigationStatus: form.irrigationStatus || 'Rain-fed',
+          roadCondition: form.roadCondition,
+          distanceToRoadValue: parseFloat(form.distanceToRoadValue) || 0,
+          distanceToRoadUnit: form.distanceToRoadUnit,
+          storageType: form.storageType,
+          storageCapacityTonnes: form.storageCapacityTonnes ? parseFloat(form.storageCapacityTonnes) : undefined,
+        },
+      });
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -1519,9 +1470,10 @@ function entriesToForm(entries: DynamicCategoryEntry[]): Record<string, Record<s
   return out;
 }
 
-function CapacityStep({ appId, unitId, onNext, farmType, declared, recorded, onEditTypes }: {
+function CapacityStep({ appId, unitId, siteId, onNext, farmType, declared, recorded, onEditTypes }: {
   appId: string;
   unitId?: string;
+  siteId?: string;
   onNext: () => void;
   farmType: 'crop' | 'livestock' | 'mixed';
   declared: { crop: string[]; livestock: string[] };
@@ -1536,7 +1488,7 @@ function CapacityStep({ appId, unitId, onNext, farmType, declared, recorded, onE
   const [livestockEntries, setLivestockEntries] = useState<Record<string, Record<string, string>>>(
     () => entriesToForm(recorded.livestock)
   );
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
 
   const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['categories'],
@@ -1644,12 +1596,16 @@ function CapacityStep({ appId, unitId, onNext, farmType, declared, recorded, onE
             ),
           }));
 
-      await verificationApi.capacity(appId, {
-        measurementMethod: method,
-        crops: showCrops ? payload('crop') : [],
-        livestock: showLivestock ? payload('livestock') : [],
-      }, unitId);
-      await refreshProgress(qc, appId);
+      enqueue('fieldActions', appId, {
+        action: 'capacity',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: {
+          measurementMethod: method,
+          crops: showCrops ? payload('crop') : [],
+          livestock: showLivestock ? payload('livestock') : [],
+        },
+      });
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -1736,13 +1692,15 @@ function StoredPhoto({ fileId, appId }: { fileId?: string; appId: string }) {
 }
 
 // ─── Step: Evidence ───────────────────────────────────────────────────────────
-function EvidenceStep({ appId, unitId, onNext, farmType }: {
+function EvidenceStep({ appId, unitId, siteId, onNext, farmType }: {
   appId: string;
   unitId?: string;
+  siteId?: string;
   onNext: () => void;
   farmType: 'crop' | 'livestock' | 'mixed';
 }) {
-  const { photos, takePhoto, pickFromGallery, uploadPhoto, removePhoto } = useCamera(appId);
+  const { photos, takePhoto, pickFromGallery, uploadPhoto, removePhoto } = useCamera(appId, siteId);
+  const isLocalSite = siteId ? offlineSiteClientId(siteId) !== null : false;
 
   /*
     Photos this farm already has on the platform.
@@ -1753,9 +1711,10 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
     captured when this visit took it OR an earlier one did.
   */
   const { data: uploadedEvidence } = useQuery({
-    queryKey: ['evidence-photos', appId],
-    queryFn: () => uploadsApi.photos(appId, 'evidence'),
+    queryKey: ['evidence-photos', appId, unitId ?? '', siteId ?? ''],
+    queryFn: () => uploadsApi.photos(appId, 'evidence', unitId, siteId),
     select: (res) => ((res.data as { data?: UploadedPhoto[] })?.data ?? []).filter((p) => !!p.slotKey),
+    enabled: !isLocalSite,
   });
   const earlier = (slotKey: string) => (uploadedEvidence ?? []).find((p) => p.slotKey === slotKey);
   const coordinator = useAuthStore((s) => s.coordinator);
@@ -1764,7 +1723,7 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
   const [uploading, setUploading] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const { currentLocation } = useGPS();
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
 
   const requiredSlots = EVIDENCE_SLOTS.filter(
     (s) => s.allTypes || (s.types ?? []).includes(farmType)
@@ -1781,7 +1740,6 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
     setUploading(slotKey);
     await uploadPhoto(photo, 'evidence', currentLocation?.lat, currentLocation?.lng);
     setUploading(null);
-    await qc.invalidateQueries({ queryKey: ['evidence-photos', appId] });
   };
 
   const submit = async () => {
@@ -1791,8 +1749,12 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
     }
     setSubmitting(true);
     try {
-      await verificationApi.evidenceComplete(appId, unitId);
-      await refreshProgress(qc, appId);
+      enqueue('fieldActions', appId, {
+        action: 'evidenceComplete',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: {},
+      });
       onNext();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed.');
@@ -1860,23 +1822,33 @@ function EvidenceStep({ appId, unitId, onNext, farmType }: {
 }
 
 // ─── Step: Review & Submit ────────────────────────────────────────────────────
-function ReviewStep({ appId, unitId, farmName, onSubmit }: {
+function ReviewStep({ appId, unitId, siteId, farmName, onSubmit }: {
   appId: string;
   unitId?: string;
+  siteId?: string;
   farmName: string;
   onSubmit: () => void;
 }) {
   const [certified, setCertified] = useState(false);
   const [loading, setLoading] = useState(false);
-  const qc = useQueryClient();
+  const enqueue = useOfflineStore((s) => s.enqueue);
 
   const submit = async () => {
     if (!certified) { Alert.alert('Required', 'You must confirm the certification statement before submitting.'); return; }
     setLoading(true);
     try {
-      await verificationApi.certify(appId, unitId);
-      await verificationApi.submit(appId, unitId);
-      await refreshProgress(qc, appId);
+      enqueue('fieldActions', appId, {
+        action: 'certify',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: { statementConfirmed: true },
+      });
+      enqueue('fieldActions', appId, {
+        action: 'submit',
+        unitId: unitId ?? null,
+        siteId: siteId ?? null,
+        body: {},
+      });
       onSubmit();
     } catch (err: unknown) {
       Alert.alert('Error', (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ?? 'Failed to submit.');
@@ -1917,34 +1889,163 @@ function ReviewStep({ appId, unitId, farmName, onSubmit }: {
   );
 }
 
-/**
- * Re-reads the saved progress after a step is saved.
- *
- * Both, because the two subjects keep it in different places: a farm's
- * progress arrives on its farm profile, and a cluster — which has no
- * registration and so no profile — is read from the verification record
- * directly. Invalidating only the profile left a cluster's step dots and
- * resume point stale after every save.
- */
-async function refreshProgress(qc: QueryClient, appId: string) {
-  await Promise.all([
-    qc.invalidateQueries({ queryKey: ['farm-profile', appId] }),
-    qc.invalidateQueries({ queryKey: ['verification-record', appId] }),
-    /*
-      The boundary too, because the GPS step now reads it back to show a
-      walk already on record. It is cached indefinitely — a walk does not
-      change on its own — so without this a coordinator who closed a walk
-      and came back to the step would be shown the record from before it.
-    */
-    qc.invalidateQueries({ queryKey: ['boundary', appId] }),
-  ]);
+function blankVerificationRecord(): VerificationRecord {
+  return {
+    currentStep: 'identity',
+    completedSteps: [],
+    overallStatus: 'in_progress',
+    farmTypeSelected: null,
+    farmTypeCategories: { crop: [], livestock: [] },
+    identity: {
+      status: 'pending', confidence: null, coordinatorConfirmed: false, confirmedAt: null,
+      mismatchReason: null, mismatchNotes: null,
+    },
+    gps: { centerLat: null, centerLng: null, accuracyMeters: null, verifiedAt: null },
+    landOwnership: {
+      ownershipType: null, docRef: null, docIssueDate: null, activeDispute: false,
+      encumbrance: false, notes: null, verifiedAt: null,
+    },
+    infrastructure: {
+      waterSource: null, irrigationStatus: null, roadCondition: null, distanceToRoadValue: null,
+      distanceToRoadUnit: null, storageType: null, storageCapacityTonnes: null, verifiedAt: null,
+    },
+    capacity: { measurementMethod: null, crops: [], livestock: [], verifiedAt: null },
+    certification: { statementText: null, coordinatorId: null, confirmedAt: null },
+    submittedAt: null,
+    approvedAt: null,
+    syncStatus: 'pending',
+  };
+}
+
+function withQueuedVerification(
+  base: VerificationRecord | null,
+  queue: ReturnType<typeof useOfflineStore.getState>['queue'],
+  appId: string,
+  unitId?: string,
+  siteId?: string
+): VerificationRecord | null {
+  const items = queue.filter((item) => item.appId === appId
+    && (item.payload.unitId ?? null) === (unitId ?? null)
+    && (item.payload.siteId ?? null) === (siteId ?? null)
+    && (item.collection === 'fieldActions' || item.collection === 'gpsCenters'));
+  if (!base && items.length === 0) return null;
+
+  const record = base ? {
+    ...base,
+    completedSteps: [...base.completedSteps],
+    identity: { ...base.identity },
+    gps: { ...base.gps },
+    landOwnership: { ...base.landOwnership },
+    infrastructure: { ...base.infrastructure },
+    capacity: { ...base.capacity },
+    certification: { ...base.certification },
+  } : blankVerificationRecord();
+
+  const complete = (step: VerificationRecord['currentStep']) => {
+    if (!record.completedSteps.includes(step)) record.completedSteps.push(step);
+    record.syncStatus = 'pending';
+  };
+
+  for (const item of items) {
+    if (item.collection === 'gpsCenters') {
+      record.gps = {
+        centerLat: typeof item.payload.centerLat === 'number' ? item.payload.centerLat : null,
+        centerLng: typeof item.payload.centerLng === 'number' ? item.payload.centerLng : null,
+        accuracyMeters: typeof item.payload.accuracyMeters === 'number' ? item.payload.accuracyMeters : null,
+        verifiedAt: item.clientTimestamp,
+      };
+      complete('gps');
+      continue;
+    }
+
+    const body = item.payload.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) continue;
+    const value = body as Record<string, unknown>;
+
+    switch (item.payload.action) {
+      case 'identity':
+        if (value.confirmed === false) record.overallStatus = 'identity_mismatch';
+        record.identity = {
+          ...record.identity,
+          status: value.confirmed === false ? 'mismatch' : 'confirmed',
+          coordinatorConfirmed: value.confirmed === true,
+          confidence: typeof value.confidence === 'number' ? value.confidence : null,
+          mismatchReason: typeof value.mismatchReason === 'string' ? value.mismatchReason : null,
+          confirmedAt: item.clientTimestamp,
+        };
+        complete('identity');
+        break;
+      case 'farmType':
+        if (value.farmType === 'crop' || value.farmType === 'livestock' || value.farmType === 'mixed') {
+          record.farmTypeSelected = value.farmType;
+        }
+        record.farmTypeCategories = {
+          crop: Array.isArray(value.cropCategories) ? value.cropCategories.filter((entry): entry is string => typeof entry === 'string') : [],
+          livestock: Array.isArray(value.livestockCategories) ? value.livestockCategories.filter((entry): entry is string => typeof entry === 'string') : [],
+        };
+        complete('farmType');
+        break;
+      case 'landOwnership':
+        record.landOwnership = {
+          ...record.landOwnership,
+          ownershipType: typeof value.ownershipType === 'string' ? value.ownershipType : null,
+          docRef: typeof value.docRef === 'string' ? value.docRef : null,
+          docIssueDate: typeof value.docIssueDate === 'string' ? value.docIssueDate : null,
+          activeDispute: value.activeDispute === true,
+          encumbrance: value.encumbrance === true,
+          notes: typeof value.notes === 'string' ? value.notes : null,
+          verifiedAt: item.clientTimestamp,
+        };
+        complete('landOwnership');
+        break;
+      case 'infrastructure':
+        record.infrastructure = {
+          ...record.infrastructure,
+          waterSource: typeof value.waterSource === 'string' ? value.waterSource : null,
+          irrigationStatus: typeof value.irrigationStatus === 'string' ? value.irrigationStatus : null,
+          roadCondition: typeof value.roadCondition === 'string' ? value.roadCondition : null,
+          distanceToRoadValue: typeof value.distanceToRoadValue === 'number' ? value.distanceToRoadValue : null,
+          distanceToRoadUnit: typeof value.distanceToRoadUnit === 'string' ? value.distanceToRoadUnit : null,
+          storageType: typeof value.storageType === 'string' ? value.storageType : null,
+          storageCapacityTonnes: typeof value.storageCapacityTonnes === 'number' ? value.storageCapacityTonnes : null,
+          verifiedAt: item.clientTimestamp,
+        };
+        complete('infrastructure');
+        break;
+      case 'capacity':
+        record.capacity = {
+          measurementMethod: typeof value.measurementMethod === 'string' ? value.measurementMethod : null,
+          crops: Array.isArray(value.crops) ? value.crops as VerificationRecord['capacity']['crops'] : [],
+          livestock: Array.isArray(value.livestock) ? value.livestock as VerificationRecord['capacity']['livestock'] : [],
+          verifiedAt: item.clientTimestamp,
+        };
+        complete('capacity');
+        break;
+      case 'evidenceComplete':
+        complete('evidence');
+        break;
+      case 'certify':
+        record.certification = { ...record.certification, confirmedAt: item.clientTimestamp };
+        complete('review');
+        break;
+      case 'submit':
+        record.overallStatus = 'submitted';
+        record.submittedAt = item.clientTimestamp;
+        complete('review');
+        break;
+    }
+  }
+
+  return record;
 }
 
 // ─── Main Wizard Orchestrator ─────────────────────────────────────────────────
 export default function VerificationWizard() {
-  const { appId, unitId, unitLabel, subjectLabel } = useLocalSearchParams<{
+  const { appId, unitId, siteId, siteLabel, unitLabel, subjectLabel } = useLocalSearchParams<{
     appId: string;
     unitId?: string;
+    siteId?: string;
+    siteLabel?: string;
     unitLabel?: string;
     /* What the thing is called, for a subject with no registration to read
        its name from — a cluster. Optional: a deep link without it falls
@@ -1954,6 +2055,8 @@ export default function VerificationWizard() {
   const router = useRouter();
   const qc = useQueryClient();
   const coordinator = useAuthStore((s) => s.coordinator);
+  const offlineQueue = useOfflineStore((s) => s.queue);
+  const isLocalSite = siteId ? offlineSiteClientId(siteId) !== null : false;
   const [isApproving, setIsApproving] = useState(false);
 
   const { data: profile, isLoading, isError, refetch } = useQuery({
@@ -1971,38 +2074,35 @@ export default function VerificationWizard() {
     */
     retry: (attempt, error) =>
       (error as { response?: { status?: number } })?.response?.status === 404 ? false : attempt < 2,
+    enabled: !siteId,
   });
 
   /*
-    The verification record on its own, which answers for BOTH subjects.
-
-    This is what makes the wizard work for a cluster: GET /verifications/:id
-    resolves a farm or a cluster, and for an unstarted one it answers with a
-    blank record rather than a 404. Read only when there is no profile, so a
-    farm verification makes no extra request and cannot show two different
-    answers from two sources.
+    Farm verification is part of its profile. Clusters and site scopes read
+    their separate verification record so neither can collide with farm data.
   */
   const {
     data: recordOnly,
     isLoading: recordLoading,
     refetch: refetchRecord,
   } = useQuery({
-    queryKey: ['verification-record', appId, unitId],
-    queryFn: () => verificationApi.get(appId, unitId),
+    queryKey: ['verification-record', appId, unitId, siteId],
+    queryFn: () => verificationApi.get(appId, unitId, siteId),
     select: (res) => res.data.data,
-    enabled: !isLoading && !profile,
+    enabled: siteId ? !isLoading && !isLocalSite : !isLoading && !profile,
   });
 
   /*
     Everything below reads this, not profile.verification — which is the
     whole of what the cluster case needed on this screen.
   */
-  const verification = profile?.verification ?? recordOnly ?? null;
+  const baseVerification = siteId ? recordOnly ?? null : profile?.verification ?? recordOnly ?? null;
+  const verification = withQueuedVerification(baseVerification, offlineQueue, appId, unitId, siteId);
 
-  /* A subject with no registration behind it is a cluster. */
-  const isCluster = !profile && !!recordOnly;
-  const subjectName = profile?.registration.farmName ?? subjectLabel ?? appId;
-  const backHref = isCluster ? `/cluster/${appId}` : `/farm/${appId}`;
+  /* A subject without a farm profile is a cluster unless it has a site scope. */
+  const isCluster = !siteId && !profile && (!!recordOnly || offlineQueue.some((item) => item.appId === appId));
+  const subjectName = siteLabel ?? profile?.registration.farmName ?? subjectLabel ?? appId;
+  const backHref = siteId ? `/sites/${appId}` : isCluster ? `/cluster/${appId}` : `/farm/${appId}`;
 
   const completedSteps = verification?.completedSteps ?? [];
   const farmType = (verification?.farmTypeSelected ?? 'crop') as 'crop' | 'livestock' | 'mixed';
@@ -2053,7 +2153,7 @@ export default function VerificationWizard() {
   }, [stepIndex, returnTo]);
 
   const handleSubmitSuccess = () => {
-    Alert.alert('Submitted!', 'Verification submitted for approval.', [
+    Alert.alert('Saved on this device', 'Verification will be submitted for approval when sync succeeds.', [
       { text: 'OK', onPress: () => router.back() },
     ]);
   };
@@ -2061,9 +2161,8 @@ export default function VerificationWizard() {
   const handleFinalApprove = async () => {
     setIsApproving(true);
     try {
-      await verificationApi.approve(appId, unitId);
+      await verificationApi.approve(appId, unitId, siteId);
       await Promise.all([
-        refreshProgress(qc, appId),
         qc.invalidateQueries({ queryKey: ['farms'] }),
         qc.invalidateQueries({ queryKey: ['clusters'] })
       ]);
@@ -2088,7 +2187,7 @@ export default function VerificationWizard() {
     more — that is every cluster — so the refusal waits until the record
     could not be read either.
   */
-  if (!verification && (isError || !profile)) {
+  if (!verification && (isError || (!profile && !siteId))) {
     return (
       <ErrorMessage
         message="Could not load this verification."
@@ -2141,7 +2240,7 @@ export default function VerificationWizard() {
       <Stack.Screen
         options={{
           headerShown: true,
-          title: unitLabel ? `${unitLabel}` : isCluster ? subjectName : 'Verification',
+          title: unitLabel ?? siteLabel ?? (isCluster ? subjectName : 'Verification'),
           headerStyle: { backgroundColor: '#0D7A3D' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontFamily: FACE.bold, color: '#fff' },
@@ -2178,30 +2277,32 @@ export default function VerificationWizard() {
 
       <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         {activeStep === 'identity' && (
-          <IdentityStep appId={appId} unitId={unitId} onNext={goToNext} completedSteps={completedSteps} />
+          <IdentityStep appId={appId} unitId={unitId} siteId={siteId} onNext={goToNext} completedSteps={completedSteps} />
         )}
         {activeStep === 'farmType' && (
           <FarmTypeStep
             appId={appId}
             unitId={unitId}
+            siteId={siteId}
             onNext={() => { goToNext(); }}
             currentFarmType={verification?.farmTypeSelected ?? null}
             declared={declared}
           />
         )}
         {activeStep === 'gps' && (
-          <GPSStep appId={appId} unitId={unitId} onNext={goToNext} completedSteps={completedSteps} />
+          <GPSStep appId={appId} unitId={unitId} siteId={siteId} onNext={goToNext} completedSteps={completedSteps} />
         )}
         {activeStep === 'landOwnership' && (
-          <LandOwnershipStep appId={appId} unitId={unitId} onNext={goToNext} />
+          <LandOwnershipStep appId={appId} unitId={unitId} siteId={siteId} onNext={goToNext} />
         )}
         {activeStep === 'infrastructure' && (
-          <InfrastructureStep appId={appId} unitId={unitId} onNext={goToNext} />
+          <InfrastructureStep appId={appId} unitId={unitId} siteId={siteId} onNext={goToNext} />
         )}
         {activeStep === 'capacity' && (
           <CapacityStep
             appId={appId}
             unitId={unitId}
+            siteId={siteId}
             onNext={goToNext}
             farmType={farmType}
             declared={declared}
@@ -2213,10 +2314,10 @@ export default function VerificationWizard() {
           />
         )}
         {activeStep === 'evidence' && (
-          <EvidenceStep appId={appId} unitId={unitId} onNext={goToNext} farmType={farmType} />
+          <EvidenceStep appId={appId} unitId={unitId} siteId={siteId} onNext={goToNext} farmType={farmType} />
         )}
         {activeStep === 'review' && (
-          <ReviewStep appId={appId} unitId={unitId} farmName={subjectName} onSubmit={handleSubmitSuccess} />
+          <ReviewStep appId={appId} unitId={unitId} siteId={siteId} farmName={subjectName} onSubmit={handleSubmitSuccess} />
         )}
       </ScrollView>
     </View>

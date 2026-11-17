@@ -14,12 +14,20 @@ import { api, API_BASE_URL, tokenStorage } from '@/services/api/client';
   this coordinator's name and answers with the file's id, which is what
   every confirm call takes.
 */
-export async function uploadCapturedFile(file: { localUri: string; filename: string; mimeType: string }): Promise<string> {
+export async function uploadCapturedFile(file: {
+  localUri: string;
+  filename: string;
+  mimeType: string;
+  clientId?: string;
+}): Promise<string> {
   const form = new FormData();
   form.append('file', { uri: file.localUri, type: file.mimeType, name: file.filename } as unknown as Blob);
 
   const { data } = await api.post<{ data: { fileId: string } }>('/uploads/file', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...(file.clientId ? { 'Idempotency-Key': file.clientId } : {}),
+    },
     /* A photo on a field connection takes longer than a JSON call. */
     timeout: 120000,
   });

@@ -64,14 +64,14 @@ export default function FarmDetailScreen() {
   /* Who is looking, so the screen can say "You" rather than an id. */
   const myCoordinatorId = useAuthStore((s) => s.coordinator?.coordinatorId ?? null);
 
-  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
+  const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['farm-profile', appId],
     queryFn: () => farmsApi.profile(appId),
     select: (res) => res.data.data,
   });
 
   if (isLoading) return <LoadingSpinner />;
-  if (isError || !data) return <ErrorMessage message="Could not load farm profile." onRetry={refetch} />;
+  if (!data) return <ErrorMessage message="Could not load farm profile." onRetry={refetch} />;
 
   const { registration: reg, verification: ver, timeline, boundary, computed } = data;
   const completedSteps = ver?.completedSteps ?? [];

@@ -17,8 +17,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sitesApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
 import { Card, Button, Input, LoadingSpinner, ErrorMessage, ProgressBar, HeaderBackButton } from '@/components/ui';
-import type { FarmSite } from '@/types';
+import type { FarmSite, OfflineQueueItem } from '@/types';
 import { getErrorMessage } from '@/utils/errors';
+import { offlineSiteId } from '@/utils/offlineIds';
+import { useOfflineStore } from '@/store/offline.store';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   pending:     { label: 'Pending',     color: '#8896A7', bg: '#F5F7FA' },
@@ -34,19 +36,26 @@ const createSiteSchema = z.object({
 });
 type CreateSiteForm = z.infer<typeof createSiteSchema>;
 
-function SiteCard({ site, onPress }: { site: FarmSite; onPress: () => void }) {
+function SiteCard({ site, onPress, onVerify, syncStatus }: {
+  site: FarmSite;
+  onPress: () => void;
+  onVerify: () => void;
+  syncStatus?: 'pending' | 'failed';
+}) {
   const status = STATUS_CONFIG[site.status] ?? STATUS_CONFIG.pending;
   const units = site.unitSummary;
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
-      <Card className="mb-3">
+    <Card className="mb-3">
+      <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
         <View className="flex-row items-center justify-between mb-1">
           <View className="flex-row items-center flex-1 mr-3">
             <Text className="text-2xl mr-2">📍</Text>
             <View className="flex-1">
               <Text className="font-bold text-text" numberOfLines={1}>{site.label}</Text>
-              <Text className="text-xs text-text-3 font-mono mt-0.5">{site.siteId}</Text>
+              <Text className="text-xs text-text-3 font-mono mt-0.5">
+                {syncStatus ? (syncStatus === 'failed' ? 'Sync failed · retry pending' : 'Saved on this device') : site.siteId}
+              </Text>
             </View>
           </View>
           <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: status.bg }}>
@@ -68,8 +77,11 @@ function SiteCard({ site, onPress }: { site: FarmSite; onPress: () => void }) {
         ) : (
           <Text className="text-xs text-yellow-500 font-medium mt-2">No units added yet — tap to add</Text>
         )}
-      </Card>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onVerify} className="mt-3 pt-3 border-t border-border">
+        <Text className="text-sm text-green-500 font-semibold">Boundary walk & full site verification →</Text>
+      </TouchableOpacity>
+    </Card>
   );
 }
 
@@ -86,6 +98,7 @@ function AddSiteModal({
 }) {
   const [loading, setLoading] = useState(false);
   const insets = useSafeAreaInsets();
+  const enqueue = useOfflineStore((state) => state.enqueue);
   const { currentLocation, isLocating, locateMe } = useGPS();
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm<CreateSiteForm>({
@@ -96,19 +109,28 @@ function AddSiteModal({
   const submit = async (data: CreateSiteForm) => {
     setLoading(true);
     try {
-      const created = await sitesApi.create(appId, {
+      const body = {
         label: data.label,
         address: data.address || undefined,
         notes: data.notes || undefined,
-      });
-
-      // If GPS was captured, immediately verify the site with it
+      };
+      const clientId = enqueue('sites', appId, { body });
       if (currentLocation) {
-        const siteId = created.data.data.siteId;
-        await sitesApi.verify(appId, siteId, {
-          gpsLat: currentLocation.lat,
-          gpsLng: currentLocation.lng,
+        enqueue('fieldActions', appId, {
+          action: 'verifySite',
+          siteId: offlineSiteId(clientId),
+          body: {
+            gpsLat: currentLocation.lat,
+            gpsLng: currentLocation.lng,
+            accuracyMeters: currentLocation.accuracyMeters,
+          },
+        });
+        enqueue('gpsCenters', appId, {
+          centerLat: currentLocation.lat,
+          centerLng: currentLocation.lng,
           accuracyMeters: currentLocation.accuracyMeters,
+          siteId: offlineSiteId(clientId),
+          unitId: null,
         });
       }
 
@@ -135,7 +157,7 @@ function AddSiteModal({
           <Card className="mb-4">
             <Text className="text-text-3 text-sm mb-3">
               A site is a physical location (e.g. a cluster of ponds, or a farm plot).
-              You'll add individual ponds/plots inside this site next.
+              After creating it, record its boundary walk and complete site verification, then add its ponds/plots.
             </Text>
             <Controller
               control={control}
@@ -223,14 +245,47 @@ export default function SitesScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
+  const queue = useOfflineStore((state) => state.queue);
 
-  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
+  const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['sites', appId],
     queryFn: () => sitesApi.list(appId),
     select: (res) => res.data.data,
   });
 
   const sites = data?.sites ?? [];
+  const localSites = queue
+    .filter((item) => item.collection === 'sites' && item.appId === appId && item.status !== 'synced')
+    .map((item: OfflineQueueItem) => {
+      const body = item.payload.body as Record<string, unknown>;
+      const timestamp = item.clientTimestamp;
+      const site: FarmSite = {
+        _id: item.clientId,
+        registrationId: '',
+        appId,
+        siteId: offlineSiteId(item.clientId),
+        siteNumber: 0,
+        label: String(body.label ?? 'New site'),
+        address: typeof body.address === 'string' ? body.address : null,
+        notes: typeof body.notes === 'string' ? body.notes : null,
+        status: 'pending',
+        verification: {
+          gpsLat: null,
+          gpsLng: null,
+          accuracyMeters: null,
+          gpsVerifiedAt: null,
+          entrancePhotoUrl: null,
+          overviewPhotoUrl: null,
+          coordinatorNotes: null,
+          verifiedAt: null,
+          verifiedBy: null,
+        },
+        createdBy: '',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      return { item, site };
+    });
   const summary = data?.summary;
 
   const handleSiteCreated = async () => {
@@ -239,8 +294,10 @@ export default function SitesScreen() {
     await qc.invalidateQueries({ queryKey: ['farm-profile', appId] });
   };
 
-  if (isLoading) return <LoadingSpinner />;
-  if (isError) return <ErrorMessage message="Could not load sites." onRetry={refetch} />;
+  if (isLoading && localSites.length === 0) return <LoadingSpinner />;
+  if (!data && localSites.length === 0) {
+    return <ErrorMessage message="Could not load sites." onRetry={refetch} />;
+  }
 
   return (
     <View className="flex-1 bg-bg">
@@ -278,27 +335,54 @@ export default function SitesScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#0D7A3D" />}
       >
-        {sites.length === 0 ? (
+        {sites.length === 0 && localSites.length === 0 ? (
           <Card className="items-center py-12 mt-4">
             <Text className="text-5xl mb-3">📍</Text>
             <Text className="font-bold text-text text-base mb-1">No sites added yet</Text>
             <Text className="text-text-3 text-sm text-center mb-4">
-              Travel to each location and tap "Add Site" to register it, then add ponds/plots within it.
+              Add each location, complete its boundary walk and site verification, then add ponds/plots within it.
             </Text>
           </Card>
         ) : (
-          sites.map((site) => (
-            <SiteCard
-              key={site.siteId}
-              site={site}
-              onPress={() =>
-                router.push({
-                  pathname: '/units/[appId]',
-                  params: { appId, siteId: site.siteId, siteLabel: site.label },
-                })
-              }
-            />
-          ))
+          <>
+            {sites.map((site) => (
+              <SiteCard
+                key={site.siteId}
+                site={site}
+                onVerify={() =>
+                  router.push({
+                    pathname: '/verification/[appId]',
+                    params: { appId, siteId: site.siteId, siteLabel: site.label },
+                  })
+                }
+                onPress={() =>
+                  router.push({
+                    pathname: '/units/[appId]',
+                    params: { appId, siteId: site.siteId, siteLabel: site.label },
+                  })
+                }
+              />
+            ))}
+            {localSites.map(({ item, site }) => (
+              <SiteCard
+                key={item.clientId}
+                site={site}
+                syncStatus={item.status === 'failed' ? 'failed' : 'pending'}
+                onVerify={() =>
+                  router.push({
+                    pathname: '/verification/[appId]',
+                    params: { appId, siteId: site.siteId, siteLabel: site.label },
+                  })
+                }
+                onPress={() =>
+                  router.push({
+                    pathname: '/units/[appId]',
+                    params: { appId, siteId: site.siteId, siteLabel: site.label },
+                  })
+                }
+              />
+            ))}
+          </>
         )}
       </ScrollView>
 

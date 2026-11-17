@@ -69,6 +69,8 @@ export type VerificationStatus =
   | 'identity_mismatch';
 
 export interface VerificationRecord {
+  unitId?: string | null;
+  siteId?: string | null;
   currentStep: VerificationStep;
   completedSteps: VerificationStep[];
   overallStatus: VerificationStatus;
@@ -135,6 +137,8 @@ export interface DynamicCategoryEntry {
 
 // ─── Boundary ─────────────────────────────────────────────────────────────────
 export interface BoundaryRecord {
+  unitId?: string | null;
+  siteId?: string | null;
   boundaryWalk: Array<{
     lat: number;
     lng: number;
@@ -463,6 +467,9 @@ export interface ApiResponse<T> {
 // ─── Offline queue ────────────────────────────────────────────────────────────
 export type SyncCollection =
   | 'verificationSteps'
+  | 'fieldActions'
+  | 'photos'
+  | 'documents'
   | 'boundaryPoints'
   /** A finished walk, queued whole when the live save could not reach the server. */
   | 'boundaryWalks'
@@ -476,7 +483,9 @@ export type SyncCollection =
    */
   | 'gpsCenters'
   | 'visits'
-  | 'incidents';
+  | 'incidents'
+  | 'sites'
+  | 'units';
 
 export interface OfflineQueueItem {
   clientId: string;
@@ -485,6 +494,10 @@ export interface OfflineQueueItem {
   payload: Record<string, unknown>;
   clientTimestamp: string;
   createdAt: number;
+  status?: 'pending' | 'synced' | 'failed';
+  lastAttemptAt?: number;
+  lastError?: string;
+  fileId?: string;
   /**
    * Failed server attempts. Absent on items queued before this existed.
    *

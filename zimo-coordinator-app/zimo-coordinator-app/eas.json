@@ -21,6 +21,9 @@
     },
     "production": {
       "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://kym-production-b5b7.up.railway.app",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"

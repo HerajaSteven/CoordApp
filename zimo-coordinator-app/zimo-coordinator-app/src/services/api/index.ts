@@ -119,7 +119,9 @@ export const harvestApi = {
     driver_id?: number;
     /** Photos of the weighing, from uploadCapturedFile(). At least one. */
     evidence_file_ids: string[];
-  }) => api.post('/harvest/collections', body),
+  }, clientId?: string) => api.post('/harvest/collections', body, {
+    headers: clientId ? { 'Idempotency-Key': clientId } : undefined,
+  }),
 };
 
 // ─── Map ──────────────────────────────────────────────────────────────────────
@@ -129,20 +131,20 @@ export const mapApi = {
 
 // ─── Verification Steps ───────────────────────────────────────────────────────
 export const verificationApi = {
-  get: (appId: string, unitId?: string) =>
-    api.get<ApiResponse<VerificationRecord>>(`/verifications/${appId}`, { params: { unitId } }),
+  get: (appId: string, unitId?: string, siteId?: string) =>
+    api.get<ApiResponse<VerificationRecord>>(`/verifications/${appId}`, { params: { unitId, siteId } }),
   identity: (appId: string, body: {
     confirmed: boolean;
     confidence?: number;
     mismatchReason?: string;
     mismatchNotes?: string;
-  }, unitId?: string) => api.post(`/verifications/${appId}/identity`, body, { params: { unitId } }),
+  }, unitId?: string, siteId?: string) => api.post(`/verifications/${appId}/identity`, body, { params: { unitId, siteId } }),
   /* `categories` is WHICH crops and which livestock — "livestock farm" does
      not say whether to ask about birds or about catfish. */
-  farmType: (appId: string, farmType: 'crop' | 'livestock' | 'mixed', categories: string[], unitId?: string) =>
-    api.post(`/verifications/${appId}/farm-type`, { farmType, categories }, { params: { unitId } }),
-  gps: (appId: string, body: { centerLat: number; centerLng: number; accuracyMeters: number }, unitId?: string) =>
-    api.put(`/verifications/${appId}/gps`, body, { params: { unitId } }),
+  farmType: (appId: string, farmType: 'crop' | 'livestock' | 'mixed', categories: string[], unitId?: string, siteId?: string) =>
+    api.post(`/verifications/${appId}/farm-type`, { farmType, categories }, { params: { unitId, siteId } }),
+  gps: (appId: string, body: { centerLat: number; centerLng: number; accuracyMeters: number }, unitId?: string, siteId?: string) =>
+    api.put(`/verifications/${appId}/gps`, body, { params: { unitId, siteId } }),
   landOwnership: (appId: string, body: {
     ownershipType: string;
     docRef: string;
@@ -150,7 +152,7 @@ export const verificationApi = {
     activeDispute: boolean;
     encumbrance: boolean;
     notes?: string;
-  }, unitId?: string) => api.put(`/verifications/${appId}/land-ownership`, body, { params: { unitId } }),
+  }, unitId?: string, siteId?: string) => api.put(`/verifications/${appId}/land-ownership`, body, { params: { unitId, siteId } }),
   infrastructure: (appId: string, body: {
     waterSource: string;
     irrigationStatus: string;
@@ -159,20 +161,20 @@ export const verificationApi = {
     distanceToRoadUnit: string;
     storageType: string;
     storageCapacityTonnes?: number;
-  }, unitId?: string) => api.put(`/verifications/${appId}/infrastructure`, body, { params: { unitId } }),
+  }, unitId?: string, siteId?: string) => api.put(`/verifications/${appId}/infrastructure`, body, { params: { unitId, siteId } }),
   capacity: (appId: string, body: {
     measurementMethod: string;
     crops: Array<{ categoryKey: string; fields: Record<string, unknown> }>;
     livestock: Array<{ categoryKey: string; fields: Record<string, unknown> }>;
-  }, unitId?: string) => api.put(`/verifications/${appId}/capacity`, body, { params: { unitId } }),
-  evidenceComplete: (appId: string, unitId?: string) =>
-    api.post(`/verifications/${appId}/evidence/complete`, {}, { params: { unitId } }),
-  certify: (appId: string, unitId?: string) =>
-    api.post(`/verifications/${appId}/certify`, { statementConfirmed: true }, { params: { unitId } }),
-  submit: (appId: string, unitId?: string) =>
-    api.post(`/verifications/${appId}/submit`, {}, { params: { unitId } }),
-  approve: (appId: string, unitId?: string) =>
-    api.post(`/verifications/${appId}/approve`, {}, { params: { unitId } }),
+  }, unitId?: string, siteId?: string) => api.put(`/verifications/${appId}/capacity`, body, { params: { unitId, siteId } }),
+  evidenceComplete: (appId: string, unitId?: string, siteId?: string) =>
+    api.post(`/verifications/${appId}/evidence/complete`, {}, { params: { unitId, siteId } }),
+  certify: (appId: string, unitId?: string, siteId?: string) =>
+    api.post(`/verifications/${appId}/certify`, { statementConfirmed: true }, { params: { unitId, siteId } }),
+  submit: (appId: string, unitId?: string, siteId?: string) =>
+    api.post(`/verifications/${appId}/submit`, {}, { params: { unitId, siteId } }),
+  approve: (appId: string, unitId?: string, siteId?: string) =>
+    api.post(`/verifications/${appId}/approve`, {}, { params: { unitId, siteId } }),
 };
 
 // ─── Boundaries ───────────────────────────────────────────────────────────────
@@ -192,16 +194,17 @@ export const verificationApi = {
  * this farm has", which is the right question only when nobody has said
  * which unit they mean.
  */
-function unitQuery(unitId?: string): string {
+function unitQuery(unitId?: string, siteId?: string): string {
+  if (siteId !== undefined) return `?siteId=${encodeURIComponent(siteId)}`;
   return unitId === undefined ? '' : `?unitId=${encodeURIComponent(unitId)}`;
 }
 
 export const boundaryApi = {
-  get: (appId: string, unitId?: string) => api.get(`/boundaries/${appId}${unitQuery(unitId)}`),
-  startWalk: (appId: string, unitId?: string) =>
-    api.post(`/boundaries/${appId}/start${unitQuery(unitId)}`),
-  pauseWalk: (appId: string, unitId?: string) => api.post<ApiResponse<{ pointCount: number; isWalkActive: boolean; hasPolygon: boolean }>>(
-    `/boundaries/${appId}/pause${unitQuery(unitId)}`
+  get: (appId: string, unitId?: string, siteId?: string) => api.get(`/boundaries/${appId}${unitQuery(unitId, siteId)}`),
+  startWalk: (appId: string, unitId?: string, siteId?: string) =>
+    api.post(`/boundaries/${appId}/start${unitQuery(unitId, siteId)}`),
+  pauseWalk: (appId: string, unitId?: string, siteId?: string) => api.post<ApiResponse<{ pointCount: number; isWalkActive: boolean; hasPolygon: boolean }>>(
+    `/boundaries/${appId}/pause${unitQuery(unitId, siteId)}`
   ),
   /*
     `capturedAt` is when the receiver took the fix, and leaving it out was
@@ -214,10 +217,11 @@ export const boundaryApi = {
   addPoint: (
     appId: string,
     body: { lat: number; lng: number; accuracyMeters: number; capturedAt?: string },
-    unitId?: string
-  ) => api.post(`/boundaries/${appId}/points${unitQuery(unitId)}`, body),
-  closeWalk: (appId: string, forceReset = false, unitId?: string) =>
-    api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/close${unitQuery(unitId)}`, { forceReset }),
+    unitId?: string,
+    siteId?: string
+  ) => api.post(`/boundaries/${appId}/points${unitQuery(unitId, siteId)}`, body),
+  closeWalk: (appId: string, forceReset = false, unitId?: string, siteId?: string) =>
+    api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/close${unitQuery(unitId, siteId)}`, { forceReset }),
 
   /**
    * THE WHOLE WALK, IN ONE REQUEST. Use this, not the three calls above.
@@ -235,8 +239,9 @@ export const boundaryApi = {
   saveWalk: (
     appId: string,
     points: Array<{ lat: number; lng: number; accuracyMeters: number; capturedAt: string ; bridged?: boolean; bridgeReason?: string }>,
-    unitId?: string
-  ) => api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/walk${unitQuery(unitId)}`, { points }),
+    unitId?: string,
+    siteId?: string
+  ) => api.post<ApiResponse<ClosedWalk>>(`/boundaries/${appId}/walk${unitQuery(unitId, siteId)}`, { points }),
 };
 
 // ─── Uploads ──────────────────────────────────────────────────────────────────
@@ -254,14 +259,18 @@ export const uploadsApi = {
     capturedAt: string;
     gpsTagLat?: number;
     gpsTagLng?: number;
-  }) => api.post(`/uploads/photos/${appId}`, body),
+    unitId?: string;
+    siteId?: string;
+  }, clientId?: string) => api.post(`/uploads/photos/${appId}`, body, {
+    headers: clientId ? { 'Idempotency-Key': clientId } : undefined,
+  }),
   confirmDocument: (appId: string, body: {
     relatedTo: 'identity' | 'landOwnership';
     fileId: string;
     capturedAt: string;
   }) => api.post(`/uploads/documents/${appId}`, body),
-  photos: (appId: string, relatedTo?: string) =>
-    api.get(`/uploads/photos/${appId}`, { params: { relatedTo } }),
+  photos: (appId: string, relatedTo?: string, unitId?: string, siteId?: string) =>
+    api.get(`/uploads/photos/${appId}`, { params: { relatedTo, unitId, siteId } }),
 };
 
 // ─── Visits ───────────────────────────────────────────────────────────────────

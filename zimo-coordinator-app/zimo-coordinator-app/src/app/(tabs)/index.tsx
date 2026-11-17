@@ -107,6 +107,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const coordinator = useAuthStore((s) => s.coordinator);
   const { queue, isSyncing, lastSyncAt } = useOfflineStore();
+  const pendingQueue = queue.filter((item) => item.status !== 'synced');
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['farms'],
@@ -156,12 +157,12 @@ export default function DashboardScreen() {
           a network — see useNetworkSync — so there is nothing to tap and
           nothing a coordinator has to remember.
         */}
-        {queue.length > 0 && (
+        {pendingQueue.length > 0 && (
           <View className="mt-3 flex-row items-center bg-white/20 rounded-xl px-3 py-2 self-start">
             <Text className="text-white text-xs font-medium">
               {isSyncing
                 ? '⟳ Syncing…'
-                : `${queue.length} saved here · will send when back online`}
+                : `${pendingQueue.length} saved here · will send when back online`}
             </Text>
           </View>
         )}

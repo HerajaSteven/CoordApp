@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import { MMKV } from 'react-native-mmkv';
 import { nanoid } from 'nanoid';
-import { syncApi } from '@/services/api';
+import { syncApi, uploadsApi } from '@/services/api';
+import { uploadCapturedFile } from '@/features/camera/platformFile';
 import type { OfflineQueueItem, SyncCollection } from '@/types';
 
 const storage = new MMKV({ id: 'offline-queue' });
 const QUEUE_KEY = 'queue';
 const BOUNDARY_DRAFTS_KEY = 'boundary-drafts';
+const LAST_SYNC_KEY = 'last-sync-at';
 
 export interface BoundaryDraftPoint {
   lat: number;
@@ -139,7 +141,8 @@ function generateId(): string {
 function loadQueue(): OfflineQueueItem[] {
   try {
     const raw = storage.getString(QUEUE_KEY);
-    return raw ? (JSON.parse(raw) as OfflineQueueItem[]) : [];
+    const parsed = raw ? JSON.parse(raw) as OfflineQueueItem[] : [];
+    return parsed.map((item) => ({ ...item, status: item.status ?? 'pending' }));
   } catch {
     return [];
   }
@@ -162,6 +165,38 @@ function saveBoundaryDrafts(drafts: Record<string, BoundaryWalkDraft>) {
   storage.set(BOUNDARY_DRAFTS_KEY, JSON.stringify(drafts));
 }
 
+function boundaryDraftKey(appId: string, unitId: unknown, siteId?: unknown): string {
+  const scope = typeof siteId === 'string'
+    ? `site:${siteId}`
+    : typeof unitId === 'string' ? unitId : '';
+  return `${appId}::${scope}`;
+}
+
+function boundaryDraftMatchesQueuedWalk(
+  draft: BoundaryWalkDraft | undefined,
+  payload: Record<string, unknown>
+): boolean {
+  const queuedPoints = payload.points;
+  if (!draft || !Array.isArray(queuedPoints) || queuedPoints.length !== draft.points.length) {
+    return false;
+  }
+
+  return draft.points.every((point, index) => {
+    const queued = queuedPoints[index];
+    if (!queued || typeof queued !== 'object') return false;
+
+    const queuedPoint = queued as Record<string, unknown>;
+    const capturedAt = typeof queuedPoint.capturedAt === 'string'
+      ? Date.parse(queuedPoint.capturedAt)
+      : Number.NaN;
+
+    return point.lat === queuedPoint.lat
+      && point.lng === queuedPoint.lng
+      && point.accuracyMeters === queuedPoint.accuracyMeters
+      && Date.parse(point.timestamp) === capturedAt;
+  });
+}
+
 interface OfflineState {
   queue: OfflineQueueItem[];
   boundaryDrafts: Record<string, BoundaryWalkDraft>;
@@ -171,7 +206,7 @@ interface OfflineState {
     collection: SyncCollection,
     appId: string,
     payload: Record<string, unknown>
-  ) => void;
+  ) => string;
   saveBoundaryDraft: (
     appId: string,
     points: Array<Omit<BoundaryDraftPoint, 'timestamp'> & { timestamp: Date | string }>
@@ -179,7 +214,8 @@ interface OfflineState {
   /** Declare the walking finished. The upload may still be outstanding. */
   endBoundaryDraft: (appId: string) => void;
   clearBoundaryDraft: (appId: string) => void;
-  sync: () => Promise<{ synced: number; conflicts: number; errors: number }>;
+  sync: (force?: boolean) => Promise<{ synced: number; conflicts: number; errors: number }>;
+  markSyncCompleted: () => void;
   clearQueue: () => void;
 }
 
@@ -187,7 +223,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   queue: loadQueue(),
   boundaryDrafts: loadBoundaryDrafts(),
   isSyncing: false,
-  lastSyncAt: null,
+  lastSyncAt: storage.getNumber(LAST_SYNC_KEY) ?? null,
 
   enqueue: (collection, appId, payload) => {
     const item: OfflineQueueItem = {
@@ -197,6 +233,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       payload,
       clientTimestamp: new Date().toISOString(),
       createdAt: Date.now(),
+      status: 'pending',
     };
 
     /*
@@ -211,24 +248,35 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       Points on a live walk are the opposite: each is its own event and
       every one of them counts, so `boundaryPoints` is never collapsed.
     */
-    const latestWins: SyncCollection[] = ['boundaryWalks', 'gpsCenters'];
+    const latestWins: SyncCollection[] = ['boundaryWalks', 'gpsCenters', 'fieldActions', 'photos'];
     /*
       Superseded per UNIT, not per farm. A farm can have many ponds or
       plots, each with its own boundary, and matching on the farm alone
       would have let one unit's queued walk evict another's — the same
       collision the stored draft had.
     */
-    const unitOf = (p: Record<string, unknown> | undefined) => (p?.unitId as string | null | undefined) ?? '';
+    const unitOf = (p: Record<string, unknown> | undefined) => {
+      if (p?.action === 'verifySite') return typeof p.siteId === 'string' ? p.siteId : '';
+      if (typeof p?.siteId === 'string') return `site:${p.siteId}`;
+      return typeof p?.unitId === 'string' ? p.unitId : '';
+    };
     const kept = latestWins.includes(collection)
       ? get().queue.filter(
           (q) =>
-            !(q.collection === collection && q.appId === appId && unitOf(q.payload) === unitOf(payload))
+            !(
+              q.collection === collection
+              && q.appId === appId
+              && unitOf(q.payload) === unitOf(payload)
+              && (collection !== 'fieldActions' || q.payload?.action === payload.action)
+              && (collection !== 'photos' || q.payload?.slotKey === payload.slotKey)
+            )
         )
       : get().queue;
 
     const updated = [...kept, item];
     saveQueue(updated);
     set({ queue: updated });
+    return item.clientId;
   },
 
   saveBoundaryDraft: (appId, points) => {
@@ -279,9 +327,16 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     set({ boundaryDrafts });
   },
 
-  sync: async () => {
+  sync: async (force = false) => {
     const { queue, isSyncing } = get();
-    if (isSyncing || queue.length === 0) {
+    const now = Date.now();
+    const work = queue.filter((item) => {
+      if (item.status === 'synced') return false;
+      if (item.status !== 'failed' || force || item.lastAttemptAt === undefined) return true;
+      const delay = Math.min(5 * 60 * 1000, 1000 * 2 ** Math.min(item.attempts ?? 1, 8));
+      return now - item.lastAttemptAt >= delay;
+    });
+    if (isSyncing || work.length === 0) {
       return { synced: 0, conflicts: 0, errors: 0 };
     }
     set({ isSyncing: true });
@@ -302,72 +357,187 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         that out again every ten seconds would be rude to a phone running
         on a field battery.
       */
-      const { data } = await sendWithPerItemFallback(queue);
-      const summary = data.data.summary as {
-        synced: number;
-        conflicts: number;
-        errors: number;
-        duplicates: number;
-      };
-      const results = data.data.results as Array<{
-        clientId: string;
-        status: string;
-      }>;
+      let completed = 0;
+      let conflicts = 0;
+      let errors = 0;
 
-      const status = new Map(results.map((r) => [r.clientId, r.status]));
-      const remaining: OfflineQueueItem[] = [];
-
-      for (const item of queue) {
-        const outcome = status.get(item.clientId);
-
-        /* Landed, or landed on an earlier attempt. Done with it. */
-        if (outcome === 'synced' || outcome === 'duplicate') {
-          continue;
+      const current = new Map(get().queue.map((item) => [item.clientId, item]));
+      const siteCreations = work.filter((item) => item.collection === 'sites');
+      for (let offset = 0; offset < siteCreations.length; offset += 200) {
+        const batch = siteCreations.slice(offset, offset + 200);
+        try {
+          const { data } = await sendWithPerItemFallback(batch);
+          const results = data.data.results as Array<{ clientId: string; status: string; message?: string }>;
+          const resultById = new Map(results.map((result) => [result.clientId, result]));
+          for (const item of batch) {
+            const result = resultById.get(item.clientId);
+            if (result?.status === 'synced' || result?.status === 'duplicate') {
+              current.set(item.clientId, { ...item, status: 'synced', lastError: undefined });
+              completed += 1;
+            } else {
+              current.set(item.clientId, {
+                ...item,
+                status: 'failed',
+                attempts: (item.attempts ?? 0) + 1,
+                lastAttemptAt: Date.now(),
+                lastError: result?.message ?? 'The server did not confirm this site.',
+              });
+              errors += 1;
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Site sync request failed.';
+          for (const item of batch) {
+            current.set(item.clientId, {
+              ...item,
+              status: 'failed',
+              attempts: (item.attempts ?? 0) + 1,
+              lastAttemptAt: Date.now(),
+              lastError: message,
+            });
+            errors += 1;
+          }
         }
-
-        /*
-          NOTHING IS EVER DISCARDED FOR FAILING.
-
-          This counted attempts and dropped an item at five, to stop a
-          hopeless entry costing battery forever. That reasoning does not
-          survive contact with the situation this app is actually in: the
-          server it talks to cannot be updated until a bill is paid, so
-          every queued walk is currently an item the server rejects — and
-          a retry counter would have quietly deleted a coordinator's
-          morning in under a minute.
-
-          A boundary walk is an hour on foot in a field. It is not
-          replayable, it is not cheap, and no automatic rule gets to throw
-          it away. The count is kept so the Sync Centre can show that
-          something is not getting through; acting on it is a person's
-          decision.
-        */
-        if (outcome === 'error') {
-          remaining.push({ ...item, attempts: (item.attempts ?? 0) + 1 });
-          continue;
-        }
-
-        remaining.push(item);
       }
 
-      saveQueue(remaining);
-      set({ queue: remaining, lastSyncAt: Date.now() });
-      return { synced: summary.synced, conflicts: summary.conflicts, errors: summary.errors };
-    } catch {
-      /*
-        Swallowed on purpose. This runs on a timer that nobody asked for,
-        so a transport failure is not news — the queue is untouched and
-        the next tick tries again. It used to throw out of here into an
-        unhandled rejection every ten seconds.
-      */
-      return { synced: 0, conflicts: 0, errors: 0 };
+      const photos = work.filter((item) => item.collection === 'photos');
+      for (const item of photos) {
+        try {
+          const fileId = await uploadCapturedFile({
+            localUri: String(item.payload.localUri),
+            filename: String(item.payload.filename),
+            mimeType: String(item.payload.mimeType),
+            clientId: item.clientId,
+          });
+          await uploadsApi.confirmPhoto(item.appId, {
+            relatedTo: String(item.payload.relatedTo),
+            slotKey: typeof item.payload.slotKey === 'string' ? item.payload.slotKey : undefined,
+            fileId,
+            capturedAt: String(item.payload.capturedAt),
+            gpsTagLat: typeof item.payload.gpsTagLat === 'number' ? item.payload.gpsTagLat : undefined,
+            gpsTagLng: typeof item.payload.gpsTagLng === 'number' ? item.payload.gpsTagLng : undefined,
+            unitId: typeof item.payload.unitId === 'string' ? item.payload.unitId : undefined,
+            siteId: typeof item.payload.siteId === 'string' ? item.payload.siteId : undefined,
+          }, item.clientId);
+          current.set(item.clientId, { ...item, status: 'synced', fileId, lastError: undefined });
+          completed += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Photo upload failed.';
+          current.set(item.clientId, {
+            ...item,
+            status: 'failed',
+            attempts: (item.attempts ?? 0) + 1,
+            lastAttemptAt: Date.now(),
+            lastError: message,
+          });
+          errors += 1;
+        }
+      }
+
+      const jsonWork = work.filter((item) =>
+        item.collection !== 'photos' && item.collection !== 'sites'
+      );
+      const blockedProofActions = new Set(
+        [...current.values()]
+          .filter((photo) => photo.collection === 'photos' && photo.status !== 'synced')
+          .map((photo) => {
+            const scope = typeof photo.payload.siteId === 'string'
+              ? `site:${photo.payload.siteId}`
+              : typeof photo.payload.unitId === 'string' ? photo.payload.unitId : '';
+            return `${photo.appId}::${scope}`;
+          })
+      );
+      const sendable = jsonWork.filter((item) => !(
+        item.collection === 'fieldActions'
+        && item.payload.action === 'evidenceComplete'
+        && blockedProofActions.has(`${item.appId}::${(
+          typeof item.payload.siteId === 'string'
+            ? `site:${item.payload.siteId}`
+            : typeof item.payload.unitId === 'string' ? item.payload.unitId : ''
+        )}`)
+      ));
+
+      for (let offset = 0; offset < sendable.length; offset += 200) {
+        const batch = sendable.slice(offset, offset + 200);
+        try {
+          const { data } = await sendWithPerItemFallback(batch);
+          const results = data.data.results as Array<{ clientId: string; status: string; message?: string }>;
+          const resultById = new Map(results.map((result) => [result.clientId, result]));
+
+          for (const item of batch) {
+            const result = resultById.get(item.clientId);
+            if (result?.status === 'synced' || result?.status === 'duplicate') {
+              current.set(item.clientId, { ...item, status: 'synced', lastError: undefined });
+              completed += 1;
+              if (item.collection === 'boundaryWalks') {
+                const draftKey = boundaryDraftKey(item.appId, item.payload?.unitId, item.payload?.siteId);
+                const draft = get().boundaryDrafts[draftKey];
+                if (boundaryDraftMatchesQueuedWalk(draft, item.payload)) {
+                  get().clearBoundaryDraft(draftKey);
+                }
+              }
+            } else {
+              const isConflict = result?.status === 'conflict';
+              current.set(item.clientId, {
+                ...item,
+                status: 'failed',
+                attempts: (item.attempts ?? 0) + 1,
+                lastAttemptAt: Date.now(),
+                lastError: result?.message ?? 'The server did not confirm this item.',
+              });
+              if (isConflict) conflicts += 1;
+              else errors += 1;
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Sync request failed.';
+          for (const item of batch) {
+            current.set(item.clientId, {
+              ...item,
+              status: 'failed',
+              attempts: (item.attempts ?? 0) + 1,
+              lastAttemptAt: Date.now(),
+              lastError: message,
+            });
+            errors += 1;
+          }
+        }
+      }
+
+      const blocked = new Set(sendable.map((item) => item.clientId));
+      for (const item of jsonWork) {
+        if (!blocked.has(item.clientId)) {
+          current.set(item.clientId, {
+            ...item,
+            status: 'failed',
+            lastError: 'Upload the required local evidence before submitting this step.',
+          });
+        }
+      }
+
+      const updated = [...current.values()]
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .slice(-500);
+      saveQueue(updated);
+      set({ queue: updated });
+      return { synced: completed, conflicts, errors };
+    } catch (error) {
+      console.error('Offline sync could not complete.', error);
+      return { synced: 0, conflicts: 0, errors: work.length };
     } finally {
       set({ isSyncing: false });
     }
   },
 
+  markSyncCompleted: () => {
+    const lastSyncAt = Date.now();
+    storage.set(LAST_SYNC_KEY, lastSyncAt);
+    set({ lastSyncAt });
+  },
+
   clearQueue: () => {
-    storage.delete(QUEUE_KEY);
-    set({ queue: [] });
+    const synced = get().queue.filter((item) => item.status === 'synced');
+    saveQueue(synced);
+    set({ queue: synced });
   },
 }));

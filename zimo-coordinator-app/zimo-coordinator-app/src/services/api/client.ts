@@ -45,11 +45,18 @@ const RETRYABLE_SERVER_STATUS = new Set([502, 503, 504]);
 const KEYS = {
   ACCESS_TOKEN: 'zimo_access_token',
   REFRESH_TOKEN: 'zimo_refresh_token',
+  COORDINATOR: 'zimo_coordinator_profile',
 } as const;
 
 export const tokenStorage = {
   getAccess: () => SecureStore.getItemAsync(KEYS.ACCESS_TOKEN),
   getRefresh: () => SecureStore.getItemAsync(KEYS.REFRESH_TOKEN),
+  getCoordinator: async <T,>(): Promise<T | null> => {
+    const saved = await SecureStore.getItemAsync(KEYS.COORDINATOR);
+    return saved ? JSON.parse(saved) as T : null;
+  },
+  setCoordinator: (coordinator: unknown) =>
+    SecureStore.setItemAsync(KEYS.COORDINATOR, JSON.stringify(coordinator)),
   setTokens: async (access: string, refresh: string) => {
     await Promise.all([
       SecureStore.setItemAsync(KEYS.ACCESS_TOKEN, access),
@@ -57,12 +64,27 @@ export const tokenStorage = {
     ]);
   },
   clear: async () => {
-    await Promise.all([
+    const results = await Promise.allSettled([
       SecureStore.deleteItemAsync(KEYS.ACCESS_TOKEN),
       SecureStore.deleteItemAsync(KEYS.REFRESH_TOKEN),
+      SecureStore.deleteItemAsync(KEYS.COORDINATOR),
     ]);
+    const failures = results.filter((result) => result.status === 'rejected');
+    if (failures.length > 0) {
+      throw new Error(`Failed to clear ${failures.length} secure session value(s).`);
+    }
   },
 };
+
+let credentialsRejectedHandler: (() => void) | null = null;
+
+export function onCredentialsRejected(handler: () => void): void {
+  credentialsRejectedHandler = handler;
+}
+
+function notifyCredentialsRejected(): void {
+  credentialsRejectedHandler?.();
+}
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -160,7 +182,10 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 });
 
 let isRefreshing = false;
-let refreshQueue: Array<(token: string) => void> = [];
+let refreshQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: AxiosError) => void;
+}> = [];
 
 // Auto-refresh on 401
 api.interceptors.response.use(
@@ -170,27 +195,42 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && original && !original._retry) {
       original._retry = true;
       if (isRefreshing) {
-        return new Promise((resolve) => {
-          refreshQueue.push((token) => {
+        return new Promise((resolve, reject) => {
+          refreshQueue.push({
+            resolve: (token) => {
             original.headers.Authorization = `Bearer ${token}`;
             resolve(api(original));
+            },
+            reject,
           });
         });
       }
       isRefreshing = true;
       try {
         const refreshToken = await tokenStorage.getRefresh();
-        if (!refreshToken) throw new Error('No refresh token');
+        if (!refreshToken) {
+          await tokenStorage.clear();
+          notifyCredentialsRejected();
+          return Promise.reject(error);
+        }
         const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
         const { accessToken: newAccess, refreshToken: newRefresh } = extractAuthPayload(data);
         await tokenStorage.setTokens(newAccess, newRefresh);
-        refreshQueue.forEach((cb) => cb(newAccess));
+        refreshQueue.forEach((pending) => pending.resolve(newAccess));
         refreshQueue = [];
         original.headers.Authorization = `Bearer ${newAccess}`;
         return api(original);
-      } catch {
-        await tokenStorage.clear();
-        // Signal to auth store to log out
+      } catch (refreshError) {
+        const status = (refreshError as AxiosError).response?.status;
+        if (status === 401) {
+          try {
+            await tokenStorage.clear();
+          } catch (clearError) {
+            console.error('Rejected session credentials could not be fully cleared.', clearError);
+          }
+          notifyCredentialsRejected();
+        }
+        refreshQueue.forEach((pending) => pending.reject(error));
         refreshQueue = [];
         return Promise.reject(error);
       } finally {
