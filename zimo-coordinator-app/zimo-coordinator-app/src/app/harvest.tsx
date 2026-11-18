@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import { nanoid } from 'nanoid';
+import { randomUUID } from 'expo-crypto';
 import { uploadCapturedFile } from '@/features/camera/platformFile';
 import { View, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { Text } from '@/components/ui/typography';
@@ -105,7 +105,7 @@ export default function HarvestPickupScreen() {
       return;
     }
 
-    const filename = `${nanoid(16)}-weighing.jpg`;
+    const filename = `${randomUUID()}-weighing.jpg`;
     const photoDirectory = `${directory}harvest-photos/`;
     const localUri = `${photoDirectory}${filename}`;
     setSavingPhoto(true);
@@ -116,7 +116,7 @@ export default function HarvestPickupScreen() {
         localUri,
         filename,
         mimeType: 'image/jpeg',
-        clientId: nanoid(32),
+        clientId: randomUUID(),
       }]);
     } catch (error) {
       console.error('Harvest weighing photo could not be saved locally.', error);
@@ -165,7 +165,7 @@ export default function HarvestPickupScreen() {
   const makeDraft = (): HarvestPickupDraft | null => {
     if (!farm || !batch) return null;
     return {
-      id: nanoid(32),
+      id: randomUUID(),
       farm,
       batch,
       headcount,

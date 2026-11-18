@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { MMKV } from 'react-native-mmkv';
-import { nanoid } from 'nanoid';
+import { randomUUID } from 'expo-crypto';
 import { syncApi, uploadsApi } from '@/services/api';
 import { uploadCapturedFile } from '@/features/camera/platformFile';
 import type { OfflineQueueItem, SyncCollection } from '@/types';
@@ -40,14 +40,8 @@ export interface BoundaryWalkDraft {
 }
 
 /**
- * A client id the server will accept.
- *
- * `nanoid()` alone produced 21 URL-safe characters, and the sync endpoint
- * declared `clientId` as a UUID — so every batch was refused with a 400
- * before it reached a handler, and this queue has never successfully
- * synced anything. The server no longer insists on the format, because
- * the id is only an idempotency key; this emits a v4-shaped id anyway so
- * a phone built today works against a server not yet updated.
+ * Use Expo's native UUID generator instead of relying on the global Web
+ * Crypto API, which is not available in every React Native runtime.
  */
 interface BatchOutcome {
   data: {
@@ -125,17 +119,7 @@ async function sendWithPerItemFallback(queue: OfflineQueueItem[]): Promise<Batch
 }
 
 function generateId(): string {
-  const hex = nanoid(32).replace(/[^0-9a-f]/gi, '') + Math.random().toString(16).slice(2);
-  const h = (hex + '0'.repeat(32)).slice(0, 32).toLowerCase();
-
-  return [
-    h.slice(0, 8),
-    h.slice(8, 12),
-    /* Version 4 and the variant bits, so it is a well-formed v4. */
-    '4' + h.slice(13, 16),
-    (['8', '9', 'a', 'b'][Math.floor(Math.random() * 4)] as string) + h.slice(17, 20),
-    h.slice(20, 32)
-  ].join('-');
+  return randomUUID();
 }
 
 function loadQueue(): OfflineQueueItem[] {
