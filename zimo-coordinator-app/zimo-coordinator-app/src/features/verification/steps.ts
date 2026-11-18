@@ -45,3 +45,7 @@ export const STEP_LABELS: Record<Step, string> = {
 export function resumeStep(completedSteps: readonly string[]): Step {
   return STEPS.find((step) => !completedSteps.includes(step)) ?? 'review';
 }
+
+export function resumeUnitStep(completedSteps: readonly string[]): Step {
+  return completedSteps.includes('gps') ? 'review' : 'gps';
+}

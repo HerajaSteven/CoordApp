@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { farmsApi, verificationApi, boundaryApi, categoriesApi, uploadsApi } from '@/services/api';
 import { useGPS } from '@/features/gps/useGPS';
 import { getErrorMessage } from '@/utils/errors';
-import { offlineSiteClientId } from '@/utils/offlineIds';
+import { offlineSiteClientId, offlineUnitClientId } from '@/utils/offlineIds';
 import { measureWalk, outerEstimate } from '@/features/gps/area';
 import { useCamera } from '@/features/camera/useCamera';
 import { useOfflineStore } from '@/store/offline.store';
@@ -36,7 +36,7 @@ import {
 } from '@/components/ui';
 import type { BoundaryRecord, CategoryFieldDef, ClosedWalk, DynamicCategoryEntry, FarmTypeCategory, UploadedPhoto, VerificationRecord } from '@/types';
 import { useStoredFileSource } from '@/features/camera/platformFile';
-import { STEPS, STEP_LABELS, resumeStep, type Step } from '@/features/verification/steps';
+import { STEPS, STEP_LABELS, resumeStep, resumeUnitStep, type Step } from '@/features/verification/steps';
 
 const EVIDENCE_SLOTS = [
   { key: 'ev-entrance', label: 'Farm Entrance', required: true, allTypes: true },
@@ -465,6 +465,7 @@ function GPSStep({
   const { currentLocation, isLocating, isWalking, walkPoints, locateMe, startBoundaryWalk, stopBoundaryWalk, markEdgeUnwalkable, restoreBoundaryWalk } = useGPS(draftKey);
   const coordinator = useAuthStore((s) => s.coordinator);
   const isLocalSite = siteId ? offlineSiteClientId(siteId) !== null : false;
+  const isLocalUnit = unitId ? offlineUnitClientId(unitId) !== null : false;
   const defaultManualCoordinatesEnabled = useSettingsStore((s) => s.superAdminManualCoordinatesEnabled);
   const isSuperAdmin = coordinator?.role === 'SuperAdmin';
 
@@ -497,9 +498,17 @@ function GPSStep({
     queryFn: async () => (await boundaryApi.get(appId, siteId ? undefined : unitId ?? '', siteId)).data?.data as BoundaryRecord | undefined,
     staleTime: Infinity,
     refetchOnMount: 'always',
-    enabled: !isLocalSite,
+    enabled: !isLocalSite && !isLocalUnit,
   });
   const localBoundaryDraft = useOfflineStore((s) => s.boundaryDrafts[draftKey]);
+  const hasQueuedUnitBoundary = useOfflineStore((s) => s.queue.some((item) =>
+    item.collection === 'boundaryWalks'
+    && item.appId === appId
+    && item.payload.unitId === (unitId ?? null)
+    && item.payload.siteId === (siteId ?? null)
+    && Array.isArray(item.payload.points)
+    && item.payload.points.length >= 3
+  ));
   const lastSyncAt = useOfflineStore((s) => s.lastSyncAt);
 
   React.useEffect(() => {
@@ -809,7 +818,7 @@ function GPSStep({
           </View>
         ) : (
           <Text className="text-text-3 text-sm mb-3">
-            Stand at the farm centre and tap "Locate Me" to capture GPS coordinates.
+            Stand at the {unitId ? 'unit' : siteId ? 'site' : 'farm'} centre and tap "Locate Me" to capture GPS coordinates.
           </Text>
         )}
         <Button
@@ -872,7 +881,7 @@ function GPSStep({
       <Card className="mb-4">
         <Text className="font-bold text-text mb-1">Boundary Walk</Text>
         <Text className="text-text-3 text-xs mb-3">
-          Walk the farm perimeter with your phone while the boundary is recorded.
+          Walk the {unitId ? 'unit' : siteId ? 'site' : 'farm'} perimeter with your phone while the boundary is recorded.
         </Text>
 
         {isWalking && (
@@ -990,6 +999,7 @@ function GPSStep({
               setBridgePending(false);
               startBoundaryWalk(walkPoints.length > 0);
             }}
+            disabled={!gpsSaved}
             variant="secondary"
             fullWidth
           />
@@ -1169,9 +1179,9 @@ function GPSStep({
       </Card>
 
       <Button
-        label="Continue"
+        label={unitId ? 'Continue to unit review' : 'Continue'}
         onPress={onNext}
-        disabled={!gpsSaved}
+        disabled={!gpsSaved || Boolean(unitId && !boundarySaved && !hasQueuedUnitBoundary)}
         fullWidth
       />
     </View>
@@ -1832,17 +1842,20 @@ function ReviewStep({ appId, unitId, siteId, farmName, onSubmit }: {
   const [certified, setCertified] = useState(false);
   const [loading, setLoading] = useState(false);
   const enqueue = useOfflineStore((s) => s.enqueue);
+  const isUnit = Boolean(unitId);
 
   const submit = async () => {
-    if (!certified) { Alert.alert('Required', 'You must confirm the certification statement before submitting.'); return; }
+    if (!isUnit && !certified) { Alert.alert('Required', 'You must confirm the certification statement before submitting.'); return; }
     setLoading(true);
     try {
-      enqueue('fieldActions', appId, {
-        action: 'certify',
-        unitId: unitId ?? null,
-        siteId: siteId ?? null,
-        body: { statementConfirmed: true },
-      });
+      if (!isUnit) {
+        enqueue('fieldActions', appId, {
+          action: 'certify',
+          unitId: unitId ?? null,
+          siteId: siteId ?? null,
+          body: { statementConfirmed: true },
+        });
+      }
       enqueue('fieldActions', appId, {
         action: 'submit',
         unitId: unitId ?? null,
@@ -1860,29 +1873,37 @@ function ReviewStep({ appId, unitId, siteId, farmName, onSubmit }: {
   return (
     <View>
       <Card className="mb-4 bg-green-50 border border-green-100">
-        <Text className="font-bold text-green-500 mb-2">✅ Ready for Submission</Text>
-        <Text className="text-text-3 text-sm">All verification steps have been completed. Please review and certify before submitting.</Text>
+        <Text className="font-bold text-green-500 mb-2">
+          {isUnit ? '✅ GPS and boundary captured' : '✅ Ready for Submission'}
+        </Text>
+        <Text className="text-text-3 text-sm">
+          {isUnit
+            ? 'The unit shares its site’s documents and amenities. Submit its location and boundary walk for admin approval.'
+            : 'All verification steps have been completed. Please review and certify before submitting.'}
+        </Text>
       </Card>
 
-      <Card className="mb-4">
-        <Text className="font-bold text-text mb-3">Coordinator Certification</Text>
-        <Text className="text-text-3 text-sm mb-4 leading-5">
-          I hereby certify that I physically visited and verified the farm represented by application{' '}
-          <Text className="font-semibold text-text font-mono">{appId}</Text>
-          {' '}on{' '}{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}.
-          The information recorded in this verification is accurate and based on my direct physical observation.
-        </Text>
-        <View className="flex-row items-center">
-          <Toggle value={certified} onToggle={() => setCertified(!certified)} />
-          <Text className="text-sm text-text ml-3 flex-1">I confirm this certification</Text>
-        </View>
-      </Card>
+      {!isUnit && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-3">Coordinator Certification</Text>
+          <Text className="text-text-3 text-sm mb-4 leading-5">
+            I hereby certify that I physically visited and verified the farm represented by application{' '}
+            <Text className="font-semibold text-text font-mono">{appId}</Text>
+            {' '}on{' '}{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}.
+            The information recorded in this verification is accurate and based on my direct physical observation.
+          </Text>
+          <View className="flex-row items-center">
+            <Toggle value={certified} onToggle={() => setCertified(!certified)} />
+            <Text className="text-sm text-text ml-3 flex-1">I confirm this certification</Text>
+          </View>
+        </Card>
+      )}
 
       <Button
-        label={loading ? 'Submitting...' : 'Submit Verification'}
+        label={loading ? 'Submitting...' : isUnit ? 'Submit Unit for Approval' : 'Submit Verification'}
         onPress={submit}
         loading={loading}
-        disabled={!certified}
+        disabled={!isUnit && !certified}
         fullWidth
       />
     </View>
@@ -2057,6 +2078,7 @@ export default function VerificationWizard() {
   const coordinator = useAuthStore((s) => s.coordinator);
   const offlineQueue = useOfflineStore((s) => s.queue);
   const isLocalSite = siteId ? offlineSiteClientId(siteId) !== null : false;
+  const isLocalUnit = unitId ? offlineUnitClientId(unitId) !== null : false;
   const [isApproving, setIsApproving] = useState(false);
 
   const { data: profile, isLoading, isError, refetch } = useQuery({
@@ -2074,7 +2096,7 @@ export default function VerificationWizard() {
     */
     retry: (attempt, error) =>
       (error as { response?: { status?: number } })?.response?.status === 404 ? false : attempt < 2,
-    enabled: !siteId,
+    enabled: !siteId && !unitId,
   });
 
   /*
@@ -2089,22 +2111,24 @@ export default function VerificationWizard() {
     queryKey: ['verification-record', appId, unitId, siteId],
     queryFn: () => verificationApi.get(appId, unitId, siteId),
     select: (res) => res.data.data,
-    enabled: siteId ? !isLoading && !isLocalSite : !isLoading && !profile,
+    enabled: unitId ? !isLocalUnit : siteId ? !isLoading && !isLocalSite : !isLoading && !profile,
   });
 
   /*
     Everything below reads this, not profile.verification — which is the
     whole of what the cluster case needed on this screen.
   */
-  const baseVerification = siteId ? recordOnly ?? null : profile?.verification ?? recordOnly ?? null;
+  const baseVerification = siteId || unitId ? recordOnly ?? null : profile?.verification ?? recordOnly ?? null;
   const verification = withQueuedVerification(baseVerification, offlineQueue, appId, unitId, siteId);
 
   /* A subject without a farm profile is a cluster unless it has a site scope. */
-  const isCluster = !siteId && !profile && (!!recordOnly || offlineQueue.some((item) => item.appId === appId));
+  const isCluster = !siteId && !unitId && !profile && (!!recordOnly || offlineQueue.some((item) => item.appId === appId));
   const subjectName = siteLabel ?? profile?.registration.farmName ?? subjectLabel ?? appId;
   const backHref = siteId ? `/sites/${appId}` : isCluster ? `/cluster/${appId}` : `/farm/${appId}`;
 
   const completedSteps = verification?.completedSteps ?? [];
+  const isUnit = Boolean(unitId);
+  const visibleSteps: readonly Step[] = isUnit ? ['gps', 'review'] : STEPS;
   const farmType = (verification?.farmTypeSelected ?? 'crop') as 'crop' | 'livestock' | 'mixed';
   /* Which crops and which livestock, chosen at the farm type step. The
      capacity step asks about these and nothing else. */
@@ -2126,10 +2150,10 @@ export default function VerificationWizard() {
     chooses one: moving on, tapping a step dot, or being sent back to farm
     type. After that, their choice stands.
   */
-  const resumeAt: Step = resumeStep(completedSteps);
+  const resumeAt: Step = isUnit ? resumeUnitStep(completedSteps) : resumeStep(completedSteps);
   const [chosenStep, setActiveStep] = useState<Step | null>(null);
   const activeStep: Step = chosenStep ?? resumeAt;
-  const stepIndex = STEPS.indexOf(activeStep);
+  const stepIndex = visibleSteps.indexOf(activeStep);
 
   /*
     Where to go back to, for a step opened from another one.
@@ -2148,9 +2172,9 @@ export default function VerificationWizard() {
       return;
     }
 
-    const next = STEPS[stepIndex + 1];
+    const next = visibleSteps[stepIndex + 1];
     if (next) setActiveStep(next);
-  }, [stepIndex, returnTo]);
+  }, [stepIndex, returnTo, visibleSteps]);
 
   const handleSubmitSuccess = () => {
     Alert.alert('Saved on this device', 'Verification will be submitted for approval when sync succeeds.', [
@@ -2166,9 +2190,17 @@ export default function VerificationWizard() {
         qc.invalidateQueries({ queryKey: ['farms'] }),
         qc.invalidateQueries({ queryKey: ['clusters'] })
       ]);
-      Alert.alert('Verified', 'Farm verification has been approved and marked as verified.', [
+      Alert.alert(
+        'Verified',
+        unitId
+          ? 'The unit GPS and boundary have been approved.'
+          : siteId
+            ? 'Site verification has been approved and marked as verified.'
+            : 'Farm verification has been approved and marked as verified.',
+        [
         { text: 'OK', onPress: () => router.back() }
-      ]);
+        ]
+      );
     } catch (err: unknown) {
       Alert.alert(
         'Approval Failed',
@@ -2187,7 +2219,7 @@ export default function VerificationWizard() {
     more — that is every cluster — so the refusal waits until the record
     could not be read either.
   */
-  if (!verification && (isError || (!profile && !siteId))) {
+  if (!verification && (isError || (!profile && !siteId && !unitId))) {
     return (
       <ErrorMessage
         message="Could not load this verification."
@@ -2206,7 +2238,7 @@ export default function VerificationWizard() {
         <Stack.Screen
           options={{
             headerShown: true,
-            title: 'Verification',
+            title: isUnit ? 'Unit Verification' : 'Verification',
             headerStyle: { backgroundColor: '#0D7A3D' },
             headerTintColor: '#fff',
             headerLeft: () => <HeaderBackButton fallbackHref={backHref} />
@@ -2218,8 +2250,10 @@ export default function VerificationWizard() {
         </Text>
         <Text className="text-text-3 text-center mb-6">
           {overallStatus === 'approved'
-            ? 'This farm has been fully verified and approved.'
-            : 'Verification has been submitted. A supervisor will review within 48 hours.'}
+            ? isUnit ? 'This unit’s GPS and boundary have been approved.' : 'This farm has been fully verified and approved.'
+            : isUnit
+              ? 'The unit’s GPS and boundary are submitted for admin approval.'
+              : 'Verification has been submitted. A supervisor will review within 48 hours.'}
         </Text>
         {overallStatus === 'submitted' && isSuperAdmin && (
           <Button
@@ -2230,7 +2264,7 @@ export default function VerificationWizard() {
           />
         )}
         {overallStatus === 'submitted' && isSuperAdmin && <View className="h-3" />}
-        <Button label="Back to Farm" onPress={() => router.back()} variant="secondary" />
+        <Button label="Back" onPress={() => router.back()} variant="secondary" />
       </View>
     );
   }
@@ -2252,17 +2286,17 @@ export default function VerificationWizard() {
       <View className="bg-white border-b border-border px-5 py-3">
         <View className="flex-row items-center justify-between mb-2">
           <Text className="text-sm font-bold text-text">{STEP_LABELS[activeStep]}</Text>
-          <Text className="text-xs text-text-3">Step {stepIndex + 1} of {STEPS.length}</Text>
+          <Text className="text-xs text-text-3">Step {stepIndex + 1} of {visibleSteps.length}</Text>
         </View>
-        <ProgressBar value={stepIndex + 1} max={STEPS.length} />
+        <ProgressBar value={stepIndex + 1} max={visibleSteps.length} />
 
         {/* Step dots */}
         <View className="flex-row justify-center mt-3 gap-1.5">
-          {STEPS.map((s, i) => (
+          {visibleSteps.map((s, i) => (
             <TouchableOpacity
               key={s}
               onPress={() => {
-                const canGo = completedSteps.includes(s) || i === 0 || completedSteps.includes(STEPS[i - 1] as Step);
+                const canGo = completedSteps.includes(s) || i === 0 || completedSteps.includes(visibleSteps[i - 1] as Step);
                 if (canGo) setActiveStep(s);
               }}
             >

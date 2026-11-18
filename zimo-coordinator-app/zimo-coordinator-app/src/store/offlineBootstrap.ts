@@ -120,6 +120,30 @@ export async function cacheOfflineReferenceData(queryClient: QueryClient): Promi
             );
           }
         }
+
+        const unitsResult = siteDataResults[0];
+        if (unitsResult.status === 'fulfilled') {
+          for (const unit of unitsResult.value.data.data.units) {
+            const unitDataResults = await Promise.allSettled([
+              queryClient.fetchQuery({
+                queryKey: ['verification-record', farm.appId, unit.unitId, undefined],
+                queryFn: () => verificationApi.get(farm.appId, unit.unitId),
+              }),
+              queryClient.fetchQuery({
+                queryKey: ['boundary', farm.appId, unit.unitId, ''],
+                queryFn: () => boundaryApi.get(farm.appId, unit.unitId),
+              }),
+            ]);
+            for (const result of unitDataResults) {
+              if (result.status === 'rejected') {
+                console.warn(
+                  `Some verification data for unit ${unit.unitId} on farm ${farm.appId} could not be cached for offline use.`,
+                  result.reason
+                );
+              }
+            }
+          }
+        }
       }
     }
   }
