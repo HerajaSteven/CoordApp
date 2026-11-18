@@ -379,7 +379,12 @@ export default function UnitsScreen() {
 
   if (isLoading && !isOfflineSite && localUnits.length === 0) return <LoadingSpinner />;
   if (!data && !isOfflineSite && localUnits.length === 0) {
-    return <ErrorMessage message="Could not load units." onRetry={refetch} />;
+    return (
+      <ErrorMessage
+        message="No saved unit list is available on this device. Connect once to download this site’s units for offline use."
+        onRetry={refetch}
+      />
+    );
   }
 
   return (

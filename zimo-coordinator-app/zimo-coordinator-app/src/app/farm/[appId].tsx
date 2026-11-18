@@ -71,7 +71,14 @@ export default function FarmDetailScreen() {
   });
 
   if (isLoading) return <LoadingSpinner />;
-  if (!data) return <ErrorMessage message="Could not load farm profile." onRetry={refetch} />;
+  if (!data) {
+    return (
+      <ErrorMessage
+        message="This farm profile is not saved on this device yet. Connect once to download it for offline use."
+        onRetry={refetch}
+      />
+    );
+  }
 
   const { registration: reg, verification: ver, timeline, boundary, computed } = data;
   const completedSteps = ver?.completedSteps ?? [];

@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { farmsApi } from '@/services/api';
-import { Card, SectionHeader, StatusBadge, LoadingSpinner } from '@/components/ui';
+import { Card, SectionHeader, StatusBadge, LoadingSpinner, ErrorMessage } from '@/components/ui';
 import type { FarmRegistration } from '@/types';
 
 function AlertCard({ farm, onPress }: { farm: FarmRegistration; onPress: () => void }) {
@@ -33,7 +33,7 @@ export default function MonitorScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const { data: farmsData, isLoading: farmsLoading, refetch, isRefetching } = useQuery({
+  const { data: farmsData, isLoading: farmsLoading, isError: farmsError, refetch, isRefetching } = useQuery({
     queryKey: ['farms'],
     queryFn: () => farmsApi.allPages({ limit: 100 }),
     select: (res) => res.data.data,
@@ -52,6 +52,14 @@ export default function MonitorScreen() {
   const alerts = [...flagged, ...unvisited].slice(0, 10);
 
   if (farmsLoading) return <LoadingSpinner />;
+  if (farmsError && !farmsData) {
+    return (
+      <ErrorMessage
+        message="No saved farm list is available on this device. Connect once to download assigned farms for offline use."
+        onRetry={refetch}
+      />
+    );
+  }
 
   return (
     <ScrollView

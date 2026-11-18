@@ -26,7 +26,7 @@ import { useAuthStore } from '@/store/auth.store';
 export function useNetworkSync() {
   const queryClient = useQueryClient();
   const { queue, sync, isSyncing, markSyncCompleted } = useOfflineStore();
-  const { offlineBootstrapPending, completeOfflineBootstrap } = useAuthStore();
+  const { offlineBootstrapPending, requestOfflineBootstrap, completeOfflineBootstrap } = useAuthStore();
 
   /*
     Read through a ref so the interval is not torn down and rebuilt on every
@@ -34,14 +34,15 @@ export function useNetworkSync() {
     coordinator saved something.
   */
   const latest = useRef({
-    queue, sync, isSyncing, markSyncCompleted, offlineBootstrapPending, completeOfflineBootstrap,
+    queue, sync, isSyncing, markSyncCompleted, offlineBootstrapPending, requestOfflineBootstrap, completeOfflineBootstrap,
   });
   latest.current = {
-    queue, sync, isSyncing, markSyncCompleted, offlineBootstrapPending, completeOfflineBootstrap,
+    queue, sync, isSyncing, markSyncCompleted, offlineBootstrapPending, requestOfflineBootstrap, completeOfflineBootstrap,
   };
 
   useEffect(() => {
     let cancelled = false;
+    let checking = false;
 
     const check = async () => {
       const {
@@ -50,6 +51,7 @@ export function useNetworkSync() {
         isSyncing: busy,
         markSyncCompleted: recordSync,
         offlineBootstrapPending: bootstrapPending,
+        requestOfflineBootstrap: requestBootstrap,
         completeOfflineBootstrap: completeBootstrap,
       } = latest.current;
 
@@ -71,17 +73,25 @@ export function useNetworkSync() {
         return;
       }
 
-      if (online && !cancelled) {
-        if (bootstrapPending) {
-          await cacheOfflineReferenceData(queryClient);
-          completeBootstrap();
-          recordSync();
-        }
-        const result = await run();
-        if (result.synced > 0 && !cancelled) {
-          await queryClient.invalidateQueries();
-          await cacheOfflineReferenceData(queryClient);
-          recordSync();
+      if (online && !cancelled && !checking) {
+        checking = true;
+        try {
+          if (bootstrapPending) {
+            if (await cacheOfflineReferenceData(queryClient)) {
+              completeBootstrap();
+              recordSync();
+            }
+          }
+          const result = await run();
+          if (result.synced > 0 && !cancelled) {
+            await queryClient.invalidateQueries();
+            if (!(await cacheOfflineReferenceData(queryClient))) {
+              requestBootstrap();
+            }
+            recordSync();
+          }
+        } finally {
+          checking = false;
         }
       }
     };

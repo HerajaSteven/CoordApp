@@ -223,11 +223,14 @@ export default function FarmMapScreen() {
 
   if (isLoading) return <LoadingSpinner />;
 
-  if (isError) {
+  if (isError && !data) {
     return (
       <View className="flex-1 bg-bg">
         <Stack.Screen options={{ title: 'Farm Map', headerShown: true }} />
-        <ErrorMessage message="Could not load your farms." onRetry={refetch} />
+        <ErrorMessage
+          message="No saved farm list is available on this device. Connect once to download assigned farms for offline use."
+          onRetry={refetch}
+        />
       </View>
     );
   }
@@ -262,6 +265,8 @@ export default function FarmMapScreen() {
               ? 'Loading the map…'
               : !hasSomethingToShow
                 ? 'Nowhere to draw yet'
+                : mapConfigQuery.isError && !tiles
+                  ? 'Map settings are not saved on this device'
                 : 'No map is configured'}
           </Text>
           <Text className="text-text-3 text-sm">
@@ -271,6 +276,8 @@ export default function FarmMapScreen() {
                 ? isLocating
                   ? 'Finding you…'
                   : 'None of your farms has been located yet, and this phone has not given a position. A farm gets its point when somebody stands on it and walks the boundary.'
+                : mapConfigQuery.isError && !tiles
+                  ? 'The farm list still works offline. Connect once to download map settings for offline use.'
                 : 'An administrator has turned the map off. The distances below are still correct.'}
           </Text>
         </Card>

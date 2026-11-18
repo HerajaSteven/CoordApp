@@ -40,13 +40,20 @@ export default function ClusterDetailScreen() {
     visit resumable.
   */
   const { data: verification } = useQuery({
-    queryKey: ['verification-record', clusterId, undefined],
+    queryKey: ['verification-record', clusterId, undefined, undefined],
     queryFn: () => verificationApi.get(clusterId),
     select: (res) => res.data.data,
   });
 
   if (isLoading) return <LoadingSpinner />;
-  if (!data?.cluster) return <ErrorMessage message="Could not load cluster farm." onRetry={refetch} />;
+  if (!data?.cluster) {
+    return (
+      <ErrorMessage
+        message="This cluster is not saved on this device yet. Connect once to download it for offline use."
+        onRetry={refetch}
+      />
+    );
+  }
 
   const cluster = data.cluster;
   const status = STATUS_CONFIG[cluster.status] ?? STATUS_CONFIG.pending;

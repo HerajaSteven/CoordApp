@@ -53,8 +53,12 @@ export default function TasksScreen() {
     try {
       await sync(true);
       await queryClient.invalidateQueries();
-      await cacheOfflineReferenceData(queryClient);
-      useAuthStore.getState().completeOfflineBootstrap();
+      const cacheComplete = await cacheOfflineReferenceData(queryClient);
+      if (cacheComplete) {
+        useAuthStore.getState().completeOfflineBootstrap();
+      } else {
+        useAuthStore.getState().requestOfflineBootstrap();
+      }
       markSyncCompleted();
     } catch (error) {
       console.error('Manual sync failed.', error);

@@ -337,7 +337,10 @@ export default function HarvestPickupScreen() {
     return (
       <View className="flex-1 bg-bg">
         <Stack.Screen options={{ title: 'Harvest Pickup', headerShown: true }} />
-        <ErrorMessage message="Could not load what is ready to collect." onRetry={farmsQuery.refetch} />
+        <ErrorMessage
+          message="No saved collection list is available on this device. Connect once to download eligible farms and batches for offline use."
+          onRetry={farmsQuery.refetch}
+        />
       </View>
     );
   }
@@ -390,7 +393,7 @@ export default function HarvestPickupScreen() {
         {farmsQuery.isError && !farmsQuery.data && (
           <Card className="mb-4">
             <Text className="text-text-3 text-sm">
-              Farm and cohort lists are not available right now. Saved pickup drafts are still available above.
+              No saved farm and cohort list is available on this device. Saved pickup drafts are still available above.
             </Text>
           </Card>
         )}
@@ -513,7 +516,9 @@ export default function HarvestPickupScreen() {
             </Text>
             {(driversQuery.data ?? []).length === 0 ? (
               <Text className="text-text-3 text-xs mb-2">
-                {driversQuery.isError ? 'Could not load drivers.' : 'No drivers are registered, so this pickup has no logistics weight.'}
+                {driversQuery.isError && !driversQuery.data
+                  ? 'No saved driver list is available on this device. Connect to download it for offline use.'
+                  : 'No drivers are registered, so this pickup has no logistics weight.'}
               </Text>
             ) : (
               <View className="flex-row flex-wrap gap-2 mb-2">

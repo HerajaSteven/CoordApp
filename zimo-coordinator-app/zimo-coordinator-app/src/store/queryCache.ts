@@ -10,6 +10,21 @@ interface CachedQuery {
 const storage = new MMKV({ id: 'field-query-cache' });
 const CACHE_KEY = 'queries';
 const MAX_CACHED_QUERIES = 250;
+const OFFLINE_QUERY_PREFIXES = new Set([
+  'farms',
+  'farm-profile',
+  'sites',
+  'units',
+  'clusters',
+  'cluster',
+  'verification-record',
+  'boundary',
+  'evidence-photos',
+  'visits',
+  'categories',
+  'map-config',
+  'harvest',
+]);
 
 function readCache(): CachedQuery[] {
   const raw = storage.getString(CACHE_KEY);
@@ -55,9 +70,14 @@ export function restoreQueryCache(queryClient: QueryClient): void {
           data: query.state.data,
           updatedAt: query.state.dataUpdatedAt,
         }))
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .slice(0, MAX_CACHED_QUERIES);
-      storage.set(CACHE_KEY, JSON.stringify(cached));
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+      const offlineCritical = cached.filter((query) =>
+        typeof query.queryKey[0] === 'string'
+        && OFFLINE_QUERY_PREFIXES.has(query.queryKey[0])
+      );
+      const other = cached.filter((query) => !offlineCritical.includes(query))
+        .slice(0, Math.max(0, MAX_CACHED_QUERIES - offlineCritical.length));
+      storage.set(CACHE_KEY, JSON.stringify([...offlineCritical, ...other]));
     });
   });
 }

@@ -6,7 +6,8 @@ import {
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/typography';
 import { FlatList } from 'react-native';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as Network from 'expo-network';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { farmsApi, clustersApi } from '@/services/api';
@@ -124,6 +125,7 @@ const CLUSTER_STATUSES = ['', 'pending', 'in_progress', 'verified', 'flagged'];
 export default function FarmsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const [category, setCategory] = useState<Category>('farms');
   const [search, setSearch] = useState('');
@@ -150,8 +152,77 @@ export default function FarmsScreen() {
 
   const farmsQuery = useInfiniteQuery({
     queryKey: ['farms', debouncedSearch, statusFilter],
-    queryFn: ({ pageParam = 1 }) =>
-      farmsApi.all({ search: debouncedSearch, status: statusFilter || undefined, page: pageParam, limit: LIMIT }),
+    queryFn: async ({ pageParam = 1 }) => {
+      const cached = queryClient.getQueryData<Awaited<ReturnType<typeof farmsApi.allPages>>>(['farms']);
+      const getCachedPage = () => {
+        if (!cached) return null;
+
+        const searchTerm = debouncedSearch.trim().toLowerCase();
+        const matchingFarms = cached.data.data.items.filter((farm) => {
+          if (statusFilter && farm.status !== statusFilter) return false;
+          if (!searchTerm) return true;
+          return [farm.farmName, farm.name, farm.appId]
+            .some((value) => value.toLowerCase().includes(searchTerm));
+        });
+        const total = matchingFarms.length;
+
+        return {
+          ...cached,
+          data: {
+            ...cached.data,
+            data: {
+              ...cached.data.data,
+              items: matchingFarms.slice((pageParam - 1) * LIMIT, pageParam * LIMIT),
+              total,
+              page: pageParam,
+              limit: LIMIT,
+              totalPages: Math.ceil(total / LIMIT),
+            },
+          },
+        };
+      };
+
+      let online = true;
+      try {
+        const network = await Network.getNetworkStateAsync();
+        online = Boolean(network.isConnected) && network.isInternetReachable !== false;
+      } catch {
+        // If connectivity cannot be determined, try the API before using cache.
+      }
+
+      if (!online) {
+        const cachedPage = getCachedPage();
+        if (cachedPage) return cachedPage;
+      }
+
+      try {
+        return await farmsApi.all({
+          search: debouncedSearch,
+          status: statusFilter || undefined,
+          page: pageParam,
+          limit: LIMIT,
+        });
+      } catch (error) {
+        const response =
+          typeof error === 'object'
+          && error !== null
+          && 'response' in error
+            ? error.response
+            : undefined;
+        const status =
+          typeof response === 'object'
+          && response !== null
+          && 'status' in response
+            ? response.status
+            : undefined;
+        const cachedPage = getCachedPage();
+        if ((!response || (typeof status === 'number' && status >= 500)) && cachedPage) {
+          console.warn('Using cached farms after the farm list could not be reached.', error);
+          return cachedPage;
+        }
+        throw error;
+      }
+    },
     getNextPageParam: (last) => {
       const d = last.data.data;
       return d.page < d.totalPages ? d.page + 1 : undefined;
@@ -257,9 +328,11 @@ export default function FarmsScreen() {
 
       {active.isLoading ? (
         <LoadingSpinner />
-      ) : active.isError ? (
+      ) : active.isError && !active.data ? (
         <ErrorMessage
-          message={onFarms ? 'Could not load farms.' : 'Could not load cluster farms.'}
+          message={onFarms
+            ? 'No saved farm list is available on this device. Connect once to download assigned farms for offline use.'
+            : 'No saved cluster list is available on this device. Connect once to download assigned clusters for offline use.'}
           onRetry={active.refetch}
         />
       ) : onFarms ? (

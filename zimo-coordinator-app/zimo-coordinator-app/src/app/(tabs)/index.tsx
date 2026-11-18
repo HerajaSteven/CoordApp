@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { farmsApi } from '@/services/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useOfflineStore } from '@/store/offline.store';
-import { Card, StatusBadge, LoadingSpinner, SectionHeader, ProgressBar } from '@/components/ui';
+import { Card, StatusBadge, LoadingSpinner, ErrorMessage, SectionHeader, ProgressBar } from '@/components/ui';
 import type { FarmRegistration } from '@/types';
 
 /*
@@ -109,7 +109,7 @@ export default function DashboardScreen() {
   const { queue, isSyncing, lastSyncAt } = useOfflineStore();
   const pendingQueue = queue.filter((item) => item.status !== 'synced');
 
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['farms'],
     queryFn: () => farmsApi.allPages({ limit: 100 }),
     select: (res) => res.data.data,
@@ -139,6 +139,14 @@ export default function DashboardScreen() {
   const go = (href: Href) => () => router.push(href);
 
   if (isLoading) return <LoadingSpinner />;
+  if (isError && !data) {
+    return (
+      <ErrorMessage
+        message="No saved farm list is available on this device. Connect once to download assigned farms for offline use."
+        onRetry={refetch}
+      />
+    );
+  }
 
   return (
     <ScrollView

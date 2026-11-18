@@ -14,6 +14,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
+  requestOfflineBootstrap: () => void;
   completeOfflineBootstrap: () => void;
 }
 
@@ -74,6 +75,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ coordinator: null, isAuthenticated: false, offlineBootstrapPending: false });
   },
 
+  requestOfflineBootstrap: () => set({ offlineBootstrapPending: true }),
   completeOfflineBootstrap: () => set({ offlineBootstrapPending: false }),
 }));
 

@@ -296,7 +296,12 @@ export default function SitesScreen() {
 
   if (isLoading && localSites.length === 0) return <LoadingSpinner />;
   if (!data && localSites.length === 0) {
-    return <ErrorMessage message="Could not load sites." onRetry={refetch} />;
+    return (
+      <ErrorMessage
+        message="No saved site list is available on this device. Connect once to download this farm’s sites for offline use."
+        onRetry={refetch}
+      />
+    );
   }
 
   return (

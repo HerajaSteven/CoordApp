@@ -2222,7 +2222,7 @@ export default function VerificationWizard() {
   if (!verification && (isError || (!profile && !siteId && !unitId))) {
     return (
       <ErrorMessage
-        message="Could not load this verification."
+        message="No saved verification data is available on this device yet. Connect once to download it before going offline."
         onRetry={() => {
           refetch();
           refetchRecord();

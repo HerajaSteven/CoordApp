@@ -144,8 +144,8 @@ export default function InspectionScreen() {
         */}
         <Card className="mb-4">
           <Text className="text-xs text-text-3">
-            {visitsFailed
-              ? 'Could not load this farm’s inspection history.'
+            {visitsFailed && !visits
+              ? 'No saved inspection history is available on this device. Connect once to download it for offline use.'
               : previous === 0
                 ? 'No inspection recorded for this farm yet.'
                 : `${previous} previous inspection${previous === 1 ? '' : 's'}${
