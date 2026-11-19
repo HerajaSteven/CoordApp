@@ -267,10 +267,12 @@ function FarmTypeStep({ appId, unitId, siteId, onNext, currentFarmType, declared
   const [loading, setLoading] = useState(false);
   const enqueue = useOfflineStore((s) => s.enqueue);
 
-  const { data: categories, isLoading: categoriesLoading } = useQuery({
+  const { data: categories, isLoading: categoriesLoading, isError: categoriesFailed, refetch: refetchCategories } = useQuery({
     queryKey: ['categories'],
     queryFn: () => categoriesApi.list(),
     select: (res) => res.data.data,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const crops = categories?.filter((c) => c.kind === 'crop') ?? [];
@@ -283,6 +285,11 @@ function FarmTypeStep({ appId, unitId, siteId, onNext, currentFarmType, declared
     list.includes(key) ? list.filter((k) => k !== key) : [...list, key];
 
   const submit = async () => {
+    if (!categories?.length) {
+      Alert.alert('Subtypes unavailable', 'Load the farm subtype list before saving this step.');
+      return;
+    }
+
     /*
       Only what the chosen farm type allows. Changing the type after picking
       categories would otherwise send crops for a livestock farm, which the
@@ -353,6 +360,44 @@ function FarmTypeStep({ appId, unitId, siteId, onNext, currentFarmType, declared
       {categoriesLoading && (
         <Card className="mb-4">
           <ActivityIndicator color="#0D7A3D" />
+        </Card>
+      )}
+
+      {!categoriesLoading && categories?.length === 0 && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Farm subtypes are unavailable</Text>
+          <Text className="text-text-3 text-sm mb-3">
+            {categoriesFailed
+              ? 'The saved subtype list could not be refreshed. Connect to the network and try again.'
+              : 'No active crop or livestock subtypes were returned. Try refreshing the list or contact an administrator.'}
+          </Text>
+          <Button label="Refresh subtypes" onPress={() => void refetchCategories()} variant="secondary" fullWidth />
+        </Card>
+      )}
+
+      {!categoriesLoading && categories == null && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Farm subtypes could not be loaded</Text>
+          <Text className="text-text-3 text-sm mb-3">
+            Connect to the network and retry. The farm type step cannot be saved until its subtype list is available.
+          </Text>
+          <Button label="Retry loading subtypes" onPress={() => void refetchCategories()} variant="secondary" fullWidth />
+        </Card>
+      )}
+
+      {!categoriesLoading && categories?.length && wantsCrops && crops.length === 0 && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Crop subtypes are unavailable</Text>
+          <Text className="text-text-3 text-sm mb-3">No active crop subtypes were returned.</Text>
+          <Button label="Refresh subtypes" onPress={() => void refetchCategories()} variant="secondary" fullWidth />
+        </Card>
+      )}
+
+      {!categoriesLoading && categories?.length && wantsLivestock && livestock.length === 0 && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Livestock subtypes are unavailable</Text>
+          <Text className="text-text-3 text-sm mb-3">No active livestock subtypes were returned.</Text>
+          <Button label="Refresh subtypes" onPress={() => void refetchCategories()} variant="secondary" fullWidth />
         </Card>
       )}
 
@@ -444,12 +489,14 @@ function GPSStep({
   siteId,
   onNext,
   completedSteps,
+  onBoundaryReady,
 }: {
   appId: string;
   unitId?: string;
   siteId?: string;
   onNext: () => void;
   completedSteps: readonly string[];
+  onBoundaryReady?: () => void;
 }) {
   /*
     THE DRAFT IS PER UNIT, NOT PER FARM.
@@ -509,6 +556,11 @@ function GPSStep({
     && Array.isArray(item.payload.points)
     && item.payload.points.length >= 3
   ));
+  React.useEffect(() => {
+    if (unitId && (boundarySaved || hasQueuedUnitBoundary)) {
+      onBoundaryReady?.();
+    }
+  }, [boundarySaved, hasQueuedUnitBoundary, onBoundaryReady, unitId]);
   const lastSyncAt = useOfflineStore((s) => s.lastSyncAt);
 
   React.useEffect(() => {
@@ -1500,10 +1552,17 @@ function CapacityStep({ appId, unitId, siteId, onNext, farmType, declared, recor
   );
   const enqueue = useOfflineStore((s) => s.enqueue);
 
-  const { data: categories, isLoading: categoriesLoading } = useQuery({
+  const {
+    data: categories,
+    isLoading: categoriesLoading,
+    isError: categoriesFailed,
+    refetch: refetchCategories,
+  } = useQuery({
     queryKey: ['categories'],
     queryFn: () => categoriesApi.list(),
     select: (res) => res.data.data,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const showCrops = farmType === 'crop' || farmType === 'mixed';
@@ -1526,6 +1585,10 @@ function CapacityStep({ appId, unitId, siteId, onNext, farmType, declared, recor
 
   const nothingDeclared =
     (showCrops ? declared.crop.length : 0) + (showLivestock ? declared.livestock.length : 0) === 0;
+  const missingDeclaredCategories = [
+    ...(showCrops ? declared.crop.filter((key) => !crops.some((category) => category.categoryKey === key)) : []),
+    ...(showLivestock ? declared.livestock.filter((key) => !livestock.some((category) => category.categoryKey === key)) : []),
+  ];
 
   const setField = (kind: 'crop' | 'livestock', categoryKey: string, fieldKey: string, value: string) => {
     const update = (prev: Record<string, Record<string, string>>) => ({
@@ -1570,6 +1633,19 @@ function CapacityStep({ appId, unitId, siteId, onNext, farmType, declared, recor
   };
 
   const submit = async () => {
+    if (!categories?.length) {
+      Alert.alert('Subtypes unavailable', 'Load the farm subtype list before saving capacity details.');
+      return;
+    }
+
+    if (missingDeclaredCategories.length > 0) {
+      Alert.alert(
+        'Farm subtypes unavailable',
+        `These selected subtypes are missing from the active list: ${missingDeclaredCategories.join(', ')}. Refresh the list or update the Farm Type step.`
+      );
+      return;
+    }
+
     const chosen = [
       ...(showCrops ? crops.map((c) => ({ category: c, kind: 'crop' as const })) : []),
       ...(showLivestock ? livestock.map((c) => ({ category: c, kind: 'livestock' as const })) : []),
@@ -1652,6 +1728,29 @@ function CapacityStep({ appId, unitId, siteId, onNext, farmType, declared, recor
             Set what it keeps on the Farm Type step and come back.
           </Text>
           <Button label="Go to Farm Type" onPress={onEditTypes} variant="secondary" fullWidth />
+        </Card>
+      )}
+
+      {!categoriesLoading && categories == null && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Capacity subtypes could not be loaded</Text>
+          <Text className="text-text-3 text-sm mb-3">
+            {categoriesFailed
+              ? 'The saved subtype list is unavailable and could not be refreshed.'
+              : 'No subtype list is saved on this device yet.'}
+            {' '}Connect to the network and retry.
+          </Text>
+          <Button label="Retry loading subtypes" onPress={() => void refetchCategories()} variant="secondary" fullWidth />
+        </Card>
+      )}
+
+      {!categoriesLoading && missingDeclaredCategories.length > 0 && (
+        <Card className="mb-4">
+          <Text className="font-bold text-text mb-1">Some selected subtypes are unavailable</Text>
+          <Text className="text-text-3 text-sm mb-3">
+            {missingDeclaredCategories.join(', ')} are not in the active subtype list. Refresh it or revise the Farm Type step.
+          </Text>
+          <Button label="Refresh subtypes" onPress={() => void refetchCategories()} variant="secondary" fullWidth />
         </Card>
       )}
 
@@ -2150,8 +2249,9 @@ export default function VerificationWizard() {
     chooses one: moving on, tapping a step dot, or being sent back to farm
     type. After that, their choice stands.
   */
-  const resumeAt: Step = isUnit ? resumeUnitStep(completedSteps) : resumeStep(completedSteps);
+  const resumeAt: Step = isUnit ? resumeUnitStep() : resumeStep(completedSteps);
   const [chosenStep, setActiveStep] = useState<Step | null>(null);
+  const [unitBoundaryReady, setUnitBoundaryReady] = useState(false);
   const activeStep: Step = chosenStep ?? resumeAt;
   const stepIndex = visibleSteps.indexOf(activeStep);
 
@@ -2296,9 +2396,11 @@ export default function VerificationWizard() {
             <TouchableOpacity
               key={s}
               onPress={() => {
+                if (isUnit && s === 'review' && !unitBoundaryReady) return;
                 const canGo = completedSteps.includes(s) || i === 0 || completedSteps.includes(visibleSteps[i - 1] as Step);
                 if (canGo) setActiveStep(s);
               }}
+              disabled={isUnit && s === 'review' && !unitBoundaryReady}
             >
               <View className={`w-2.5 h-2.5 rounded-full ${
                 completedSteps.includes(s) ? 'bg-green-500' :
@@ -2324,7 +2426,14 @@ export default function VerificationWizard() {
           />
         )}
         {activeStep === 'gps' && (
-          <GPSStep appId={appId} unitId={unitId} siteId={siteId} onNext={goToNext} completedSteps={completedSteps} />
+          <GPSStep
+            appId={appId}
+            unitId={unitId}
+            siteId={siteId}
+            onNext={goToNext}
+            completedSteps={completedSteps}
+            onBoundaryReady={() => setUnitBoundaryReady(true)}
+          />
         )}
         {activeStep === 'landOwnership' && (
           <LandOwnershipStep appId={appId} unitId={unitId} siteId={siteId} onNext={goToNext} />
