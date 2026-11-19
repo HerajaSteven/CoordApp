@@ -46,6 +46,12 @@ export function resumeStep(completedSteps: readonly string[]): Step {
   return STEPS.find((step) => !completedSteps.includes(step)) ?? 'review';
 }
 
-export function resumeUnitStep(completedSteps: readonly string[]): Step {
-  return completedSteps.includes('gps') ? 'review' : 'gps';
+export function resumeUnitStep(): Step {
+  /*
+    GPS completion alone does not finish a unit's capture step. Its
+    boundary is saved separately, so a unit must resume at GPS until both
+    are present; the wizard advances to review only when the coordinator
+    explicitly continues.
+  */
+  return 'gps';
 }
