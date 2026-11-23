@@ -1,6 +1,6 @@
 import '../theme/globals.css';
 import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -36,6 +36,19 @@ restoreQueryCache(queryClient);
 
 function AppContent() {
   const loadSession = useAuthStore((s) => s.loadSession);
+  const segments = useSegments();
+  const rootSegment = segments[0];
+  const routeSegment = segments.slice(1)[0];
+  const lightHeader =
+    rootSegment === '(auth)' ||
+    rootSegment === 'map' ||
+    rootSegment === 'harvest' ||
+    (rootSegment === '(tabs)' &&
+      ['farms', 'monitor', 'tasks'].includes(routeSegment ?? ''));
+  const statusBarStyle = lightHeader ? 'dark' : 'light';
+  const statusBarBackgroundColor = lightHeader
+    ? rootSegment === '(auth)' ? '#F5F7FA' : '#FFFFFF'
+    : '#0D7A3D';
   /* One number decides how large the whole design draws — see rootScale. */
   useRootScale();
   useNetworkSync();
@@ -46,7 +59,11 @@ function AppContent() {
 
   return (
     <>
-      <StatusBar style="light" />
+      <StatusBar
+        style={statusBarStyle}
+        backgroundColor={statusBarBackgroundColor}
+        translucent={false}
+      />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />

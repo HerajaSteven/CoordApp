@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { Text } from '@/components/ui/typography';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Input } from '@/components/ui';
 import { authApi } from '@/services/api';
 import { useAuthStore } from '@/store/auth.store';
@@ -17,6 +18,7 @@ import { getErrorMessage } from '@/utils/errors';
  */
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const login = useAuthStore((s) => s.login);
 
   const [stage, setStage] = useState<'email' | 'code'>('email');
@@ -89,7 +91,14 @@ export default function ForgotPasswordScreen() {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1 bg-bg">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="flex-1 justify-center px-6 py-12">
           <View className="mb-8">
             <Text className="text-2xl font-bold text-text">Set your password</Text>

@@ -39,10 +39,10 @@ const REFERENCE_WIDTH = 390;
 const BASE_REM = 16;
 
 /*
-  Roughly 6% smaller on the narrowest phones, 12% larger on a tablet. Wider
-  than this and the design stops being one design.
+  The design never drops below its reference size. Narrow screens flex
+  their content instead of shrinking the type and spacing below 100%.
 */
-const MIN_REM = 15;
+const MIN_REM = BASE_REM;
 const MAX_REM = 18;
 
 /** What the root rem should be for a screen of this width. */

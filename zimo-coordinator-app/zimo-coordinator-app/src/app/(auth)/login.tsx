@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Text } from '@/components/ui/typography';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -24,6 +25,7 @@ type FormData = z.infer<typeof schema>;
 
 export default function LoginScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const login = useAuthStore((s) => s.login);
   const [loading, setLoading] = useState(false);
 
@@ -61,7 +63,14 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       className="flex-1 bg-bg"
     >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="flex-1 justify-center px-6 py-12">
           {/* Header */}
           <View className="items-center mb-10">

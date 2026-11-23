@@ -3,6 +3,7 @@ import {
   Text as RNText,
   TextInput as RNTextInput,
   PixelRatio,
+  useWindowDimensions,
   type TextProps,
   type TextInputProps,
 } from 'react-native';
@@ -76,9 +77,17 @@ export const FACE = {
 const BODY_FACE = FACE.regular;
 
 /** Text that grows with the reader's setting, up to where the layout holds. */
-export function Text({ maxFontSizeMultiplier, style, ...rest }: TextProps) {
+export function Text({
+  allowFontScaling,
+  maxFontSizeMultiplier,
+  style,
+  ...rest
+}: TextProps) {
+  const { fontScale } = useWindowDimensions();
+
   return (
     <RNText
+      allowFontScaling={allowFontScaling !== false && fontScale >= 1}
       maxFontSizeMultiplier={maxFontSizeMultiplier ?? MAX_FONT_SCALE}
       style={[{ fontFamily: BODY_FACE }, style]}
       {...rest}
@@ -87,9 +96,17 @@ export function Text({ maxFontSizeMultiplier, style, ...rest }: TextProps) {
 }
 
 /** The same cap for anything typed into, so a field does not outgrow its box. */
-export function TextInput({ maxFontSizeMultiplier, style, ...rest }: TextInputProps) {
+export function TextInput({
+  allowFontScaling,
+  maxFontSizeMultiplier,
+  style,
+  ...rest
+}: TextInputProps) {
+  const { fontScale } = useWindowDimensions();
+
   return (
     <RNTextInput
+      allowFontScaling={allowFontScaling !== false && fontScale >= 1}
       maxFontSizeMultiplier={maxFontSizeMultiplier ?? MAX_FONT_SCALE}
       style={[{ fontFamily: BODY_FACE }, style]}
       {...rest}
