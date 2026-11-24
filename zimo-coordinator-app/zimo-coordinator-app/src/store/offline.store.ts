@@ -149,14 +149,14 @@ function saveBoundaryDrafts(drafts: Record<string, BoundaryWalkDraft>) {
   storage.set(BOUNDARY_DRAFTS_KEY, JSON.stringify(drafts));
 }
 
-function boundaryDraftKey(appId: string, unitId: unknown, siteId?: unknown): string {
+export function boundaryDraftKey(appId: string, unitId: unknown, siteId?: unknown): string {
   const scope = typeof siteId === 'string'
     ? `site:${siteId}`
     : typeof unitId === 'string' ? unitId : '';
   return `${appId}::${scope}`;
 }
 
-function boundaryDraftMatchesQueuedWalk(
+export function boundaryDraftMatchesQueuedWalk(
   draft: BoundaryWalkDraft | undefined,
   payload: Record<string, unknown>
 ): boolean {
@@ -181,6 +181,34 @@ function boundaryDraftMatchesQueuedWalk(
   });
 }
 
+function parseBoundaryDraftKey(key: string): { appId: string; unitId: string | null; siteId: string | null } {
+  const separator = key.lastIndexOf('::');
+  if (separator < 0) return { appId: key, unitId: null, siteId: null };
+
+  const appId = key.slice(0, separator);
+  const scope = key.slice(separator + 2);
+  if (scope.startsWith('site:')) {
+    return { appId, unitId: null, siteId: scope.slice('site:'.length) || null };
+  }
+
+  return { appId, unitId: scope || null, siteId: null };
+}
+
+function boundaryWalkPayload(draft: BoundaryWalkDraft, unitId: string | null, siteId: string | null) {
+  return {
+    points: draft.points.map((point) => ({
+      lat: point.lat,
+      lng: point.lng,
+      accuracyMeters: point.accuracyMeters,
+      capturedAt: point.timestamp,
+      bridged: point.bridged,
+      bridgeReason: point.bridgeReason,
+    })),
+    unitId,
+    siteId,
+  };
+}
+
 interface OfflineState {
   queue: OfflineQueueItem[];
   boundaryDrafts: Record<string, BoundaryWalkDraft>;
@@ -198,6 +226,7 @@ interface OfflineState {
   /** Declare the walking finished. The upload may still be outstanding. */
   endBoundaryDraft: (appId: string) => void;
   clearBoundaryDraft: (appId: string) => void;
+  queueBoundaryDraft: (draftKey: string, markCompleted?: boolean) => string;
   sync: (force?: boolean) => Promise<{ synced: number; conflicts: number; errors: number }>;
   markSyncCompleted: () => void;
   clearQueue: () => void;
@@ -311,7 +340,36 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     set({ boundaryDrafts });
   },
 
+  queueBoundaryDraft: (draftKey, markCompleted = false) => {
+    let draft = get().boundaryDrafts[draftKey];
+    if (!draft) throw new Error('The saved boundary walk could not be found on this device.');
+
+    if (draft.endedAt == null) {
+      if (!markCompleted) throw new Error('Confirm that the saved boundary walk is complete before queuing it.');
+      get().endBoundaryDraft(draftKey);
+      draft = get().boundaryDrafts[draftKey];
+    }
+
+    if (draft.points.length < 3) {
+      throw new Error('A boundary walk needs at least 3 GPS points before it can be queued.');
+    }
+
+    const { appId, unitId, siteId } = parseBoundaryDraftKey(draftKey);
+    if (!appId) throw new Error('The saved boundary walk has no farm or cluster id.');
+
+    const payload = boundaryWalkPayload(draft, unitId, siteId);
+    const existing = get().queue.find((item) =>
+      item.collection === 'boundaryWalks'
+      && item.appId === appId
+      && boundaryDraftKey(item.appId, item.payload?.unitId, item.payload?.siteId) === draftKey
+      && boundaryDraftMatchesQueuedWalk(draft, item.payload)
+    );
+
+    return existing?.clientId ?? get().enqueue('boundaryWalks', appId, payload);
+  },
+
   sync: async (force = false) => {
+    recoverEndedBoundaryDrafts();
     const { queue, isSyncing } = get();
     const now = Date.now();
     const work = queue.filter((item) => {
@@ -525,3 +583,14 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     set({ queue: synced });
   },
 }));
+
+function recoverEndedBoundaryDrafts(): void {
+  const { boundaryDrafts, queueBoundaryDraft } = useOfflineStore.getState();
+  for (const [draftKey, draft] of Object.entries(boundaryDrafts)) {
+    if (draft.endedAt != null && draft.points.length >= 3) {
+      queueBoundaryDraft(draftKey);
+    }
+  }
+}
+
+recoverEndedBoundaryDrafts();

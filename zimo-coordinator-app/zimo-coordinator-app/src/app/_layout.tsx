@@ -1,5 +1,5 @@
 import '../theme/globals.css';
-import React, { useEffect } from 'react';
+import React, { useEffect, useLayoutEffect } from 'react';
 import { Stack, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -18,7 +18,7 @@ import { useNetworkSync } from '@/hooks/useNetworkSync';
 import { initSentry } from '@/config/sentry';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useRootScale } from '@/theme/rootScale';
-import { restoreQueryCache } from '@/store/queryCache';
+import { activateQueryCache } from '@/store/queryCache';
 
 initSentry();
 
@@ -32,10 +32,11 @@ const queryClient = new QueryClient({
   },
 });
 
-restoreQueryCache(queryClient);
-
 function AppContent() {
   const loadSession = useAuthStore((s) => s.loadSession);
+  const coordinator = useAuthStore((s) => s.coordinator);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
   const segments = useSegments();
   const rootSegment = segments[0];
   const routeSegment = segments.slice(1)[0];
@@ -52,6 +53,14 @@ function AppContent() {
   /* One number decides how large the whole design draws — see rootScale. */
   useRootScale();
   useNetworkSync();
+
+  useLayoutEffect(() => {
+    if (isLoading) return;
+    activateQueryCache(
+      queryClient,
+      isAuthenticated ? coordinator?.coordinatorId ?? null : null
+    );
+  }, [coordinator?.coordinatorId, isAuthenticated, isLoading]);
 
   useEffect(() => {
     loadSession();
