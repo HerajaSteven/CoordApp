@@ -62,9 +62,9 @@ interface BatchOutcome {
  * isolates that: the unknown one fails alone and waits for a server that
  * understands it, and everything else goes up today.
  *
- * Only for a 4xx. A 5xx or a connection failure means the server is not
- * answering, and splitting one dead request into fifty would drain a
- * field phone to learn the same thing.
+ * Only for a batch-wide 400. A 429 is a throttle, not a schema mismatch;
+ * splitting it into one request per item would amplify the overload.
+ * A 5xx or connection failure likewise must not fan out into more requests.
  */
 async function sendWithPerItemFallback(queue: OfflineQueueItem[]): Promise<BatchOutcome> {
   try {
@@ -72,7 +72,7 @@ async function sendWithPerItemFallback(queue: OfflineQueueItem[]): Promise<Batch
   } catch (err) {
     const status = (err as { response?: { status?: number } })?.response?.status;
 
-    if (queue.length < 2 || status === undefined || status < 400 || status >= 500) {
+    if (queue.length < 2 || status !== 400) {
       throw err;
     }
 
@@ -392,12 +392,11 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         for as long as that server stays in place. Which, right now, is
         until a hosting bill is paid.
 
-        So a 4xx — something about what WE sent — is retried one item at a
-        time, and only the items the server genuinely cannot take are left
-        behind. A 5xx or a dead connection is not retried that way: the
-        server is simply not there, and sending fifty requests to find
-        that out again every ten seconds would be rude to a phone running
-        on a field battery.
+        A batch-wide 400 — a collection this server does not recognise —
+        is retried one item at a time so that one unsupported item cannot
+        block the rest. A 429 is a throttle, not a schema mismatch, and
+        must not fan out into one request per queued item. A 5xx or dead
+        connection likewise means the server is not answering.
       */
       let completed = 0;
       let conflicts = 0;
